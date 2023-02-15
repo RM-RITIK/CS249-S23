@@ -243,7 +243,8 @@ public class Main {
         public void read(@Parameters(paramLabel = "register") String register) {
             ArrayList<String> servers = new ArrayList<>(Arrays.asList(serverPorts.split(",")));
             int n = servers.size();
-            HashMap<Long, Long> readValues = new HashMap<Long, Long>();
+            int num_read_responses = 0;
+            HashMap<String, Long[]> readValues = new HashMap<String, Long[]>();
             for(int i = 0; i<n; i++){
                 System.out.printf("will read from server %s\n", servers.get(i));
                 var lastColon = servers.get(i).lastIndexOf(':');
@@ -266,19 +267,28 @@ public class Main {
                 service.shutdown();
 
                 if(result != null){
+                    num_read_responses = num_read_responses + 1;
                     if(result[2] != 1){
-                        readValues.put(result[0], result[1]);
+                        Long[] label_value_pair = new Long[2];
+                        label_value_pair[0] = result[0];
+                        label_value_pair[1] = result[1];
+                        readValues.put(servers.get(i), label_value_pair);
                     }
                 }
             }
+            System.out.println(num_read_responses);
 
-            if (readValues.size() >= Math.ceil((n+1)/2)){
+            if (num_read_responses >= Math.ceil((n+1)/2) && readValues.size() > 0){
+                System.out.println("Read1 was successful");
                 long max_label = -1000000;
-                for (Map.Entry<Long,Long> mapElement : readValues.entrySet()) {
-                    long label = mapElement.getKey();
-                    max_label = Math.max(label, max_label);
+                long max_value = -1000000;
+                for (Map.Entry<String,Long[]> mapElement : readValues.entrySet()) {
+                    Long[] label_value_pair = mapElement.getValue();
+                    if(label_value_pair[0] > max_label){
+                        max_label = label_value_pair[0];
+                        max_value = label_value_pair[1];
+                    }
                 }
-                long max_value = readValues.get(max_label);
 
                 int numRead2Success = 0;
                 for(int i = 0; i<n; i++){
@@ -306,13 +316,16 @@ public class Main {
                 }
 
                 if(numRead2Success >= Math.ceil((n+1)/2)){
-                    System.out.println("Read2 was successfull.");
+                    System.out.println(max_value + "(" + max_label + ")");
                 }
                 else{
-                    System.out.println("Rea2 was unsuccessfull.");
+                    System.out.println("failed");
                 }
 
 
+            }
+            else{
+                System.out.println("failed");
             }
 
 
@@ -352,6 +365,7 @@ public class Main {
             }
         };
 
+        @Command
         public void write(@Parameters(paramLabel = "register") String register,
                           @Parameters(paramLabel = "value") String value) {
             ArrayList<String> servers = new ArrayList<>(Arrays.asList(serverPorts.split(",")));
@@ -383,11 +397,11 @@ public class Main {
                 }
             }
 
-            if(numWriteSuccesses > Math.ceil((n+1)/2)){
-                Long label_value[] = new Long[2];
-                label_value[0] = label;
-                label_value[1] = Long.parseLong(value);
-                RegisterValues.put(register, label_value);
+            if(numWriteSuccesses >= Math.ceil((n+1)/2)){
+                System.out.println("success");
+            }
+            else{
+                System.out.println("failure");
             }
         }
     }
