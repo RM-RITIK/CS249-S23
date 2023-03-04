@@ -31,6 +31,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.*;
 import java.util.*;
 
+
 import java.lang.Math;
 
 public class Main {
@@ -67,6 +68,7 @@ public class Main {
         @Override
         public void read1(Read1Request request, StreamObserver<Read1Response> responseObserver){
             if(read1_access == false){
+                System.out.println("Read1 is disabled");
                 return;
             }
             long register = request.getAddr();
@@ -88,6 +90,7 @@ public class Main {
         @Override
         public void read2(Read2Request request, StreamObserver<Read2Response> responseObserver){
             if(read2_access == false){
+                System.out.println("Read2 is disabled");
                 return;
             }
             String register = Long.toString(request.getAddr());
@@ -116,9 +119,10 @@ public class Main {
         }
 
         @Override
-        public void write(WriteRequest request, StreamObserver<WriteResponse> responseObserver){
+        public synchronized void write(WriteRequest request, StreamObserver<WriteResponse> responseObserver){
             if(write_access == false){
-                return;
+               System.out.println("Write is disabled.");
+               return;
             }
             String register = Long.toString(request.getAddr());
             long label = request.getLabel();
@@ -181,105 +185,56 @@ public class Main {
         @Parameters(index = "0", description = "comma separated list of servers to use.")
         String serverPorts;
 
-        class readFromServer implements Callable
-        {
-            private String host;
-            private int port;
-            private String register;
-
-            public readFromServer(String host, int port, String register){
-                this.host = host;
-                this.port = port;
-                this.register = register;
-            }
-
-            @Override
-            public Long[] call() throws Exception
-            {
-                var channel = ManagedChannelBuilder.forAddress(this.host, this.port).usePlaintext().build();
-                var stub = ABDServiceGrpc.newBlockingStub(channel);
-                var response = stub.read1(Grpc.Read1Request.newBuilder().setAddr(Long.parseLong(this.register)).build());
-                long label = response.getLabel();
-                long value = response.getValue();
-                long isValuePresent = response.getRc();
-                return new Long[] {label, value, isValuePresent};
-            }
-
-        };
-
-        class announceRead implements Callable
-        {
-            private String host;
-            private int port;
-            private long label;
-            private long value;
-            private String register;
-
-            public announceRead(String host, int port, String register, long label, long value){
-                this.host = host;
-                this.port = port;
-                this.register = register;
-                this.label = label;
-                this.value = value;
-            }
-
-            @Override
-            public String call() throws Exception
-            {
-                var channel = ManagedChannelBuilder.forAddress(this.host, this.port).usePlaintext().build();
-                var stub = ABDServiceGrpc.newBlockingStub(channel);
-                try{
-                    var response = stub.read2(Grpc.Read2Request.newBuilder().setAddr(Long.parseLong(this.register)).setLabel(this.label).setValue(this.value).build());
-                    return "sucess";
-                }
-                catch (StatusRuntimeException ex){
-                    return "failure";
-                }
-            }
-
-        };
-
         @Command
-        public void read(@Parameters(paramLabel = "register") String register) {
+        public void read(@Parameters(paramLabel = "register") String register) throws InterruptedException {
             ArrayList<String> servers = new ArrayList<>(Arrays.asList(serverPorts.split(",")));
             int n = servers.size();
-            int num_read_responses = 0;
+            final int[] num_read_responses = {0};
             HashMap<String, Long[]> readValues = new HashMap<String, Long[]>();
+            final CountDownLatch threadCounterRead1 = new CountDownLatch(servers.size()/2 + 1);
             for(int i = 0; i<n; i++){
-                System.out.printf("will read from server %s\n", servers.get(i));
+                var server = servers.get(i);
                 var lastColon = servers.get(i).lastIndexOf(':');
                 var host = servers.get(i).substring(0, lastColon);
                 var port = Integer.parseInt(servers.get(i).substring(lastColon+1));
-                readFromServer readObject = new readFromServer(host, port, register);
-                RunnableFuture<Long[]> future = new FutureTask<>(readObject);
-                ExecutorService service = Executors.newSingleThreadExecutor();
-                service.execute(future);
-                Long[] result = null;
-                try
-                {
-                    result = future.get(3, TimeUnit.SECONDS);    // wait 3 seconds
-                }
-                catch (Exception ex)
-                {
-                    System.out.println("Cannot read from server " + servers.get(i));
-                    future.cancel(true);
-                }
-                service.shutdown();
+                var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+                var stub = ABDServiceGrpc.newStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+                var request = Grpc.Read1Request.newBuilder().setAddr(Long.parseLong(register)).build();
 
-                if(result != null){
-                    num_read_responses = num_read_responses + 1;
-                    if(result[2] != 1){
-                        Long[] label_value_pair = new Long[2];
-                        label_value_pair[0] = result[0];
-                        label_value_pair[1] = result[1];
-                        readValues.put(servers.get(i), label_value_pair);
+                StreamObserver<Read1Response> responseObserver = new StreamObserver<Read1Response>() {
+                    @Override
+                    public void onNext(Read1Response response) {
+                        long label = response.getLabel();
+                        long value = response.getValue();
+                        long isValuePresent = response.getRc();
+                        if(isValuePresent != 1){
+                            Long[] label_value_pair = new Long[2];
+                            label_value_pair[0] = label;
+                            label_value_pair[1] = value;
+                            readValues.put(server, label_value_pair);
+                        }
                     }
-                }
-            }
-            System.out.println(num_read_responses);
 
-            if (num_read_responses >= Math.ceil((n+1)/2) && readValues.size() > 0){
-                System.out.println("Read1 was successful");
+                    @Override
+                    public void onError(Throwable throwable) {
+                        channel.shutdown();
+
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        channel.shutdown();
+                        num_read_responses[0] = num_read_responses[0] + 1;
+                        threadCounterRead1.countDown();
+
+                    }
+                };
+                stub.read1(request, responseObserver);
+
+            }
+            threadCounterRead1.await(3, TimeUnit.SECONDS);
+
+            if (num_read_responses[0] >= Math.ceil((n+1)/2) && readValues.size() > 0){
                 long max_label = -1000000;
                 long max_value = -1000000;
                 for (Map.Entry<String,Long[]> mapElement : readValues.entrySet()) {
@@ -289,33 +244,40 @@ public class Main {
                         max_value = label_value_pair[1];
                     }
                 }
-
-                int numRead2Success = 0;
+                final CountDownLatch threadCounterRead2 = new CountDownLatch(servers.size()/2 + 1);
+                final int[] numRead2Success = {0};
                 for(int i = 0; i<n; i++){
-                    System.out.printf("will announce read value to server %s\n", servers.get(i));
                     var lastColon = servers.get(i).lastIndexOf(':');
                     var host = servers.get(i).substring(0, lastColon);
                     var port = Integer.parseInt(servers.get(i).substring(lastColon+1));
-                    announceRead announceObj = new announceRead(host, port, register, max_label, max_value);
-                    RunnableFuture<String> future = new FutureTask<>(announceObj);
-                    ExecutorService service = Executors.newSingleThreadExecutor();
-                    service.execute(future);
-                    String result = null;
-                    try{
-                        result = future.get(3, TimeUnit.SECONDS);
-                    }
-                    catch (Exception ex){
-                        System.out.println("Announe read to server " + servers.get(i) + " was not successfull.");
-                        future.cancel(true);
-                    }
-                    service.shutdown();
+                    var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+                    var stub = ABDServiceGrpc.newStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+                    var request = Grpc.Read2Request.newBuilder().setAddr(Long.parseLong(register)).setLabel(max_label).setValue(max_value).build();
+                    StreamObserver<Read2Response> responseObserver = new StreamObserver<Read2Response>() {
+                        @Override
+                        public void onNext(Read2Response read2Response) {
 
-                    if(result != null && result != "failure"){
-                        numRead2Success = numRead2Success + 1;
-                    }
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            channel.shutdown();
+
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            channel.shutdown();
+                            numRead2Success[0] = numRead2Success[0] + 1;
+                            threadCounterRead2.countDown();
+                        }
+                    };
+                    stub.read2(request, responseObserver);
                 }
 
-                if(numRead2Success >= Math.ceil((n+1)/2)){
+                threadCounterRead2.await(3, TimeUnit.SECONDS);
+
+                if(numRead2Success[0] >= Math.ceil((n+1)/2)){
                     System.out.println(max_value + "(" + max_label + ")");
                 }
                 else{
@@ -331,73 +293,48 @@ public class Main {
 
         }
 
-        @Command
-        class announceWrite implements Callable
-        {
-            private String host;
-            private int port;
-            private String register;
-            private String value;
-            private long label;
-
-            announceWrite(String host, int port, String register, String value, long label){
-                this.host = host;
-                this.port = port;
-                this.register = register;
-                this.value = value;
-                this.label = label;
-            }
-
-            @Override
-            public String call() throws Exception
-            {
-                var channel = ManagedChannelBuilder.forAddress(this.host, this.port).usePlaintext().build();
-                var stub = ABDServiceGrpc.newBlockingStub(channel);
-                try{
-                    var response = stub.write(Grpc.WriteRequest.newBuilder().setAddr(Long.parseLong(this.register)).setLabel(this.label).setValue(Long.parseLong(this.value)).build());
-                    return "sucess";
-                }
-                catch (StatusRuntimeException ex){
-                    return "failure";
-                }
-
-
-            }
-        };
 
         @Command
         public void write(@Parameters(paramLabel = "register") String register,
-                          @Parameters(paramLabel = "value") String value) {
+                          @Parameters(paramLabel = "value") String value) throws InterruptedException {
             ArrayList<String> servers = new ArrayList<>(Arrays.asList(serverPorts.split(",")));
             int n = servers.size();
             long label = System.currentTimeMillis();
-            int numWriteSuccesses = 0;
+            final int[] numWriteSuccesses = {0};
+            final CountDownLatch threadCounter = new CountDownLatch(servers.size()/2 + 1);
 
             for(int i = 0; i<n; i++){
-                System.out.printf("will communicate new read value to server %s\n", servers.get(i));
                 var lastColon = servers.get(i).lastIndexOf(':');
                 var host = servers.get(i).substring(0, lastColon);
                 var port = Integer.parseInt(servers.get(i).substring(lastColon+1));
-                announceWrite writeObj = new announceWrite(host, port, register, value, label);
-                RunnableFuture<String> future = new FutureTask<>(writeObj);
-                ExecutorService service = Executors.newSingleThreadExecutor();
-                service.execute(future);
-                String result = null;
-                try{
-                    result = future.get(3, TimeUnit.SECONDS);
-                }
-                catch (Exception ex){
-                    System.out.println("Communication of new write value to server " + servers.get(i) + " was not successfull.");
-                    future.cancel(true);
-                }
-                service.shutdown();
+                var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+                var stub = ABDServiceGrpc.newStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+                var request = Grpc.WriteRequest.newBuilder().setAddr(Long.parseLong(register)).setLabel(label).setValue(Long.parseLong(value)).build();
+                StreamObserver<WriteResponse> responseObserver = new StreamObserver<WriteResponse>() {
+                    @Override
+                    public void onNext(WriteResponse response) {
 
-                if(result != null && result != "failure"){
-                    numWriteSuccesses = numWriteSuccesses + 1;
-                }
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        channel.shutdown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        channel.shutdown();
+                        numWriteSuccesses[0] = numWriteSuccesses[0] + 1;
+                        threadCounter.countDown();
+
+                    }
+                };
+                stub.write(request, responseObserver);
+
             }
+            threadCounter.await(3, TimeUnit.SECONDS);
 
-            if(numWriteSuccesses >= Math.ceil((n+1)/2)){
+            if(numWriteSuccesses[0] >= Math.ceil((n+1)/2)){
                 System.out.println("success");
             }
             else{

@@ -1,4 +1,5 @@
 edu/sjsu/cs249/abd/Grpc$NameResponse$Builder.class
+edu/sjsu/cs249/abd/Main$ClientCli$2.class
 edu/sjsu/cs249/abd/Grpc$Read1Response$1.class
 edu/sjsu/cs249/abd/Grpc$EnableResponse.class
 edu/sjsu/cs249/abd/Grpc$ExitRequest$Builder.class
@@ -6,7 +7,6 @@ edu/sjsu/cs249/abd/Grpc.class
 edu/sjsu/cs249/abd/Main$ServerCli.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$ABDServiceMethodDescriptorSupplier.class
 edu/sjsu/cs249/abd/Grpc$EnableResponse$1.class
-edu/sjsu/cs249/abd/Main$ClientCli$announceRead.class
 edu/sjsu/cs249/abd/Main.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$ABDServiceImplBase.class
 edu/sjsu/cs249/abd/Main$ClientCli.class
@@ -20,10 +20,10 @@ edu/sjsu/cs249/abd/Grpc$WriteResponse$1.class
 edu/sjsu/cs249/abd/Grpc$Read1Request$Builder.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$3.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$ABDServiceFutureStub.class
+edu/sjsu/cs249/abd/Main$ClientCli$1.class
 edu/sjsu/cs249/abd/Grpc$WriteResponse$Builder.class
 edu/sjsu/cs249/abd/Grpc$EnableRequest$Builder.class
 edu/sjsu/cs249/abd/Grpc$ExitResponse$1.class
-edu/sjsu/cs249/abd/Main$ClientCli$readFromServer.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$MethodHandlers.class
 edu/sjsu/cs249/abd/Grpc$WriteRequest$1.class
 edu/sjsu/cs249/abd/Grpc$WriteRequest$Builder.class
@@ -44,7 +44,6 @@ edu/sjsu/cs249/abd/Grpc$Read1RequestOrBuilder.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$2.class
 edu/sjsu/cs249/abd/ABDServiceGrpc$ABDServiceBlockingStub.class
 edu/sjsu/cs249/abd/Grpc$Read1Response$Builder.class
-edu/sjsu/cs249/abd/Main$ClientCli$announceWrite.class
 edu/sjsu/cs249/abd/Grpc$WriteResponse.class
 edu/sjsu/cs249/abd/Grpc$Read2Response$1.class
 edu/sjsu/cs249/abd/Grpc$Read2RequestOrBuilder.class
@@ -54,6 +53,7 @@ edu/sjsu/cs249/abd/Grpc$ExitRequest$1.class
 edu/sjsu/cs249/abd/Main$Cli.class
 edu/sjsu/cs249/abd/Grpc$NameRequestOrBuilder.class
 edu/sjsu/cs249/abd/Grpc$ExitRequestOrBuilder.class
+edu/sjsu/cs249/abd/Main$ClientCli$3.class
 edu/sjsu/cs249/abd/Grpc$ExitRequest.class
 edu/sjsu/cs249/abd/Grpc$Read2Response.class
 edu/sjsu/cs249/abd/Grpc$ExitResponse.class
