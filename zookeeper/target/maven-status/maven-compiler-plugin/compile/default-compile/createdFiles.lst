@@ -30,6 +30,7 @@ edu/sjsu/cs249/zooleader/Grpc$GetLunchResponse$1.class
 edu/sjsu/cs249/zooleader/ZooLunchGrpc$ZooLunchBaseDescriptorSupplier.class
 edu/sjsu/cs249/zooleader/Grpc$GetLunchRequest.class
 edu/sjsu/cs249/zooleader/Grpc$LunchesAttendedRequestOrBuilder.class
+edu/sjsu/cs249/zooleader/Main$ZooLunchReader$3.class
 edu/sjsu/cs249/zooleader/ZooLunchGrpc$ZooLunchMethodDescriptorSupplier.class
 edu/sjsu/cs249/zooleader/ZooLunchGrpc$1.class
 edu/sjsu/cs249/zooleader/Grpc$ExitRequest$Builder.class

@@ -24,10 +24,12 @@ import java.util.*;
 
 
 public class Main {
-    public static boolean isLeader = Boolean.FALSE;
     public static ZooKeeper zk;
+    public static List<Long> czxids_of_lunch_attend;
+    public static Boolean skip_next_lunch = Boolean.FALSE;
+    public static HashMap<Long, String> zxid_to_leader = new HashMap<Long, String>();
+    public static HashMap<Long, List<String>> zxid_to_attendes = new HashMap<Long, List<String>>();
     public static class ZooLunchServiceImpl extends ZooLunchImplBase {
-        private ZooKeeper zk;
         private String zookeeper_server_list;
         private String lunchPath;
         private String name;
@@ -40,48 +42,98 @@ public class Main {
 
         @Override
         public void goingToLunch(Grpc.GoingToLunchRequest request, StreamObserver<Grpc.GoingToLunchResponse> responseObserver) {
-            if(isLeader == Boolean.FALSE) {
-                Grpc.GoingToLunchResponse response = Grpc.GoingToLunchResponse.newBuilder().setRc(1).build();
-                responseObserver.onNext(response);
-                responseObserver.onCompleted();
-            }
-            else{
-                try{
+            try{
+                Long lastOrCurrentLunchZxid = new Long(-10000000);
+                for(HashMap.Entry<Long, List<String>> lunch: zxid_to_attendes.entrySet()) {
+                    if(lunch.getKey() > lastOrCurrentLunchZxid){
+                        lastOrCurrentLunchZxid = lunch.getKey();
+                    }
                 }
-                catch(Exception e){
-                    System.out.println("Error in creating a zookeeper instance.");
+                String Leader = zxid_to_leader.get(lastOrCurrentLunchZxid);
+                if(Leader != this.name){
+                    Grpc.GoingToLunchResponse response = Grpc.GoingToLunchResponse.newBuilder().setRc(1).build();
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
+                else{
+                    List<String> attendes = zxid_to_attendes.get(lastOrCurrentLunchZxid);
+                    Grpc.GoingToLunchResponse response = Grpc.GoingToLunchResponse.newBuilder().setRc(0).setRestaurant("Dominos").setLeader("zk-" + this.name).addAllAttendees(attendes).build();
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
                 }
 
+            }
+            catch(Exception e){
+                System.out.println("Error in processing goingToLunch request");
             }
         }
 
         @Override
         public void lunchesAttended(Grpc.LunchesAttendedRequest request, StreamObserver<Grpc.LunchesAttendedResponse> responseObserver) {
-            super.lunchesAttended(request, responseObserver);
+            Grpc.LunchesAttendedResponse response = Grpc.LunchesAttendedResponse.newBuilder().addAllZxids(czxids_of_lunch_attend).build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+
         }
 
         @Override
         public void getLunch(Grpc.GetLunchRequest request, StreamObserver<Grpc.GetLunchResponse> responseObserver) {
-            super.getLunch(request, responseObserver);
+            long lunch_zxid = request.getZxid();
+            try{
+                if(zxid_to_leader.get(lunch_zxid) == this.name){
+                    List<String> attendes = zxid_to_attendes.get(lunch_zxid);
+                    Grpc.GetLunchResponse response = Grpc.GetLunchResponse.newBuilder().setRc(0).setLeader("zk-" + this.name).setRestaurant("Dominos").addAllAttendees(attendes).build();
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
+                else{
+                    List<String> attendes = zxid_to_attendes.get(lunch_zxid);
+                    Boolean didAttend = Boolean.FALSE;
+                    for(int i = 0; i<attendes.size(); i++){
+                        if(attendes.get(i) == "zk-" + this.name){
+                            didAttend = Boolean.TRUE;
+                        }
+                    }
+
+                    if(didAttend == Boolean.TRUE){
+                        String leader = zxid_to_leader.get(lunch_zxid);
+                        Grpc.GetLunchResponse response = Grpc.GetLunchResponse.newBuilder().setRc(1).setLeader(leader).build();
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                    else{
+                        Grpc.GetLunchResponse response = Grpc.GetLunchResponse.newBuilder().setRc(2).build();
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                }
+
+            }
+            catch(Exception e){
+
+            }
         }
 
         @Override
         public void skipLunch(Grpc.SkipRequest request, StreamObserver<Grpc.SkipResponse> responseObserver) {
-            super.skipLunch(request, responseObserver);
+            skip_next_lunch = Boolean.TRUE;
+            Grpc.SkipResponse response = Grpc.SkipResponse.newBuilder().build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
         }
 
         @Override
         public void exitZoo(Grpc.ExitRequest request, StreamObserver<Grpc.ExitResponse> responseObserver) {
-            super.exitZoo(request, responseObserver);
+            System.exit(0);
         }
     }
     public static class ServerCLI extends Thread {
-        private int serverPort;
+        private String grpcHostPort;
         private String zookeeper_server_list;
         private String Name;
         private String lunchPath;
-        ServerCLI(int serverPort, String Name, String serverPorts, String lunchPath) {
-            this.serverPort = serverPort;
+        ServerCLI(String grpcHostPort, String Name, String serverPorts, String lunchPath) {
+            this.grpcHostPort = grpcHostPort;
             this.zookeeper_server_list = serverPorts;
             this.Name = Name;
             this.lunchPath = lunchPath;
@@ -89,10 +141,13 @@ public class Main {
 
         @Override
         public void run() {
-            System.out.printf("will contact %s\n", this.serverPort);
+            var lastColon = grpcHostPort.lastIndexOf(':');
+            var host = grpcHostPort.substring(0, lastColon);
+            int serverPort = Integer.parseInt(grpcHostPort.substring(lastColon+1));
+            System.out.printf("will contact %s\n", serverPort);
             try{
                 Server server = ServerBuilder
-                        .forPort(this.serverPort)
+                        .forPort(serverPort)
                         .addService(new ZooLunchServiceImpl(this.zookeeper_server_list, this.lunchPath, this.Name)).build();
 
                 server.start();
@@ -109,16 +164,15 @@ public class Main {
         private String zookeeper_server_list;
         private String lunchPath;
         private String name;
-        private int grpcHostPort;
+        private String grpcHostPort;
 
-        private ZooKeeper zk;
-
-        ZooLunchReader(String zookeeper_server_list, String lunchPath, String name) {
+        ZooLunchReader(String zookeeper_server_list, String lunchPath, String name, String grpcHostPort) {
             this.zookeeper_server_list = zookeeper_server_list;
             this.lunchPath = lunchPath;
             this.name = name;
+            this.grpcHostPort = grpcHostPort;
             try{
-                this.zk = new ZooKeeper(zookeeper_server_list, 10000, (e) ->{System.out.println(e);});
+                zk = new ZooKeeper(zookeeper_server_list, 10000, (e) ->{System.out.println(e);});
             }
             catch(Exception e){
                 System.out.println("Error in creating a zookeeper instance.");
@@ -127,9 +181,9 @@ public class Main {
 
         public Boolean addEntryInTheCompanyDirectory() {
             String path = this.lunchPath + "/employee/" + "zk-" + this.name;
-            String data = "172.27.24.5:" + String.valueOf(this.grpcHostPort);
+            String data = this.grpcHostPort;
             try{
-                this.zk.create(path, data.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                zk.create(path, data.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                 return Boolean.TRUE;
             }
             catch(Exception e){
@@ -142,7 +196,7 @@ public class Main {
 
         private Boolean createZNodeForLunch() {
             try{
-                this.zk.create(this.lunchPath + "/zk-" + this.name, name.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                zk.create(this.lunchPath + "/zk-" + this.name, name.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                 return Boolean.TRUE;
             }
             catch (Exception e) {
@@ -169,11 +223,10 @@ public class Main {
                 catch (Exception e){
                     System.out.println("Error in getting the number of znode under /lunch directory.");
                 }
-                while(true){
+                while(doesPathExist(this.lunchPath + "/lunchtime")){
                     try{
                         this.zk.create(this.lunchPath + "/leader", this.name.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                         System.out.println("I have become the leader");
-                        isLeader = Boolean.TRUE;
                         break;
                     }
                     catch(Exception e){
@@ -194,7 +247,7 @@ public class Main {
         };
 
         private void chooseLeader() {
-            electLeader el = new electLeader(this.zk, this.lunchPath, this.name);
+            electLeader el = new electLeader(zk, this.lunchPath, this.name);
             FutureTask<String> choosingLeader = new FutureTask<>(el, "");
             ExecutorService executor = Executors.newFixedThreadPool(1);
             executor.submit(choosingLeader);
@@ -203,8 +256,13 @@ public class Main {
         private void deleteZNodeForLunch() {
             String deletePath = this.lunchPath + "/zk-" + this.name;
             try{
-                int version = this.zk.exists(deletePath, true).getVersion();
-                this.zk.delete(deletePath, version);
+                if(doesPathExist(deletePath)){
+                    int version = zk.exists(deletePath, true).getVersion();
+                    zk.delete(deletePath, version);
+                }
+                else{
+                    System.out.println("Path does not exist for the node to be deleted.");
+                }
             }
             catch (Exception e){
                 System.out.println("Not able to delete the ZNode after lunch is finished");
@@ -213,7 +271,7 @@ public class Main {
 
         private Boolean doesPathExist(String path){
             try{
-                if(this.zk.exists(path, true) != null){
+                if(zk.exists(path, true) != null){
                     return Boolean.TRUE;
                 }
                 return Boolean.FALSE;
@@ -223,12 +281,59 @@ public class Main {
             }
         }
 
+        public void addAttendedAndIncrementLunchesAttended() {
+            try{
+                Stat attendesLowerBound = zk.exists(this.lunchPath + "/readyforlunch", true);
+                Stat attendesUpperBound = zk.exists(this.lunchPath + "/lunchtime ", true);
+                Stat lunchZNode = zk.exists(this.lunchPath + "/zk-" + this.name, true);
+
+                List<String> lunchChildren = zk.getChildren(this.lunchPath, true);
+                List<String> attendes = null;
+
+                for(int i = 0; i<lunchChildren.size(); i++){
+                    String child = lunchChildren.get(i);
+                    Stat childStat = zk.exists(this.lunchPath + "/" + child, true);
+                    if(childStat != null && childStat.getCzxid() > attendesLowerBound.getCzxid() &&
+                            childStat.getCzxid() < attendesUpperBound.getCzxid()) {
+                        attendes.add(child);
+                    }
+                }
+
+                zxid_to_attendes.put(attendesUpperBound.getCzxid(), attendes);
+
+                if(lunchZNode != null && lunchZNode.getCzxid() > attendesLowerBound.getCzxid() &&
+                lunchZNode.getCzxid() < attendesUpperBound.getCzxid()) {
+                    czxids_of_lunch_attend.add(attendesUpperBound.getCzxid());
+                }
+            }
+            catch (Exception e){
+                System.out.println("Error in incrementing number of lunches attended");
+            }
+        }
+
+        public void findLunchLeader() {
+            try{
+                Stat lunchTime = zk.exists(this.lunchPath + "/lunchtime", true);
+                Stat lunchLeader = zk.exists(this.lunchPath + "/leader", true);
+                byte[] leaderName = zk.getData(this.lunchPath + "/leader", true, lunchLeader);
+                zxid_to_leader.put(lunchTime.getCzxid(), leaderName.toString());
+            }
+            catch(Exception e){
+                System.out.println("Error in finding lunch leader");
+            }
+        }
+
         public void readyForLunch() {
-            String createWatchPath = "/lunch/readyforlunch";
-            String DeleteWatchPath = "/lunch/lunchtime";
+            String createWatchPath = this.lunchPath + "/readyforlunch";
+            String lunchTimeWatchPath = this.lunchPath + "/lunchtime";
+            String DeleteWatchPath = this.lunchPath + "/lunchtime";
             Watcher watchForCreate = new Watcher() {
                 @Override
                 public void process(WatchedEvent watchedEvent) {
+                    if(skip_next_lunch == Boolean.TRUE){
+                        skip_next_lunch = Boolean.FALSE;
+                        return;
+                    }
                     if (watchedEvent.getPath().equals(createWatchPath) && watchedEvent.getType() == Event.EventType.NodeCreated){
                         createZNodeForLunch();
                         chooseLeader();
@@ -236,11 +341,29 @@ public class Main {
                 }
             };
             try{
-                this.zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
+                zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
             }
             catch(Exception e){
                 System.out.println("Error adding watch for creating znode.");
             }
+
+            Watcher watchForLunchTime = new Watcher() {
+                @Override
+                public void process(WatchedEvent watchedEvent) {
+                    if(watchedEvent.getPath().equals(lunchTimeWatchPath) && watchedEvent.getType() == Event.EventType.NodeCreated){
+                        addAttendedAndIncrementLunchesAttended();
+                        findLunchLeader();
+                    }
+
+                }
+            };
+            try{
+                zk.addWatch(lunchTimeWatchPath, watchForLunchTime, AddWatchMode.PERSISTENT);
+            }
+            catch (Exception e){
+                System.out.println("Error adding watch for lunch time.");
+            }
+
             Watcher watchForDelete = new Watcher() {
                 @Override
                 public void process(WatchedEvent watchedEvent) {
@@ -250,7 +373,7 @@ public class Main {
                 }
             };
             try {
-                this.zk.addWatch(DeleteWatchPath, watchForDelete, AddWatchMode.PERSISTENT);
+                zk.addWatch(DeleteWatchPath, watchForDelete, AddWatchMode.PERSISTENT);
             }
             catch(Exception e){
                 System.out.println(e.getMessage());
@@ -268,7 +391,7 @@ public class Main {
         private String Name;
 
         @Parameters(index = "1", description = "host port of grpc")
-        private int grpcHostPort;
+        private String grpcHostPort;
 
         @Parameters(index = "2", description = "list of zookeeper servers")
         private String serverPorts;
@@ -281,7 +404,7 @@ public class Main {
             ServerCLI server = new ServerCLI(grpcHostPort, Name, serverPorts, lunchPath);
             server.start();
 
-            ZooLunchReader zoolunch = new ZooLunchReader(serverPorts, lunchPath, Name);
+            ZooLunchReader zoolunch = new ZooLunchReader(serverPorts, lunchPath, Name, grpcHostPort);
             zoolunch.addEntryInTheCompanyDirectory();
             zoolunch.readyForLunch();
 
