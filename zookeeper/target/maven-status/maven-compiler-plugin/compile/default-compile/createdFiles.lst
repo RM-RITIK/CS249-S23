@@ -19,6 +19,7 @@ edu/sjsu/cs249/zooleader/ZooLunchGrpc$ZooLunchBlockingStub.class
 edu/sjsu/cs249/zooleader/Grpc$LunchesAttendedResponse$1.class
 edu/sjsu/cs249/zooleader/Grpc$ExitRequest.class
 edu/sjsu/cs249/zooleader/Grpc$LunchesAttendedResponse.class
+edu/sjsu/cs249/zooleader/Main$ZooLunchReader$4.class
 edu/sjsu/cs249/zooleader/Grpc$ExitResponseOrBuilder.class
 edu/sjsu/cs249/zooleader/Grpc$LunchesAttendedRequest$Builder.class
 edu/sjsu/cs249/zooleader/Grpc$GetLunchRequest$Builder.class

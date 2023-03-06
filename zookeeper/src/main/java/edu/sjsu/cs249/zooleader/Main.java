@@ -25,7 +25,8 @@ import java.util.*;
 
 public class Main {
     public static ZooKeeper zk;
-    public static List<Long> czxids_of_lunch_attend;
+    public static Boolean isCurrentLeader = Boolean.FALSE;
+    public static List<Long> czxids_of_lunch_attend = new ArrayList<Long>();
     public static Boolean skip_next_lunch = Boolean.FALSE;
     public static HashMap<Long, String> zxid_to_leader = new HashMap<Long, String>();
     public static HashMap<Long, List<String>> zxid_to_attendes = new HashMap<Long, List<String>>();
@@ -200,6 +201,7 @@ public class Main {
                 return Boolean.TRUE;
             }
             catch (Exception e) {
+                System.out.println(e.getMessage());
                 System.out.println("Error in creating znode for getting ready for lunch.");
                 return Boolean.FALSE;
             }
@@ -223,10 +225,14 @@ public class Main {
                 catch (Exception e){
                     System.out.println("Error in getting the number of znode under /lunch directory.");
                 }
-                while(doesPathExist(this.lunchPath + "/lunchtime")){
+                while(true){
+                    if(doesPathExist(this.lunchPath + "/readyforlunch") == Boolean.FALSE){
+                        break;
+                    }
                     try{
                         this.zk.create(this.lunchPath + "/leader", this.name.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                         System.out.println("I have become the leader");
+                        isCurrentLeader = Boolean.TRUE;
                         break;
                     }
                     catch(Exception e){
@@ -254,6 +260,7 @@ public class Main {
         }
 
         private void deleteZNodeForLunch() {
+            System.out.println("delete znode for lunch called.");
             String deletePath = this.lunchPath + "/zk-" + this.name;
             try{
                 if(doesPathExist(deletePath)){
@@ -283,12 +290,13 @@ public class Main {
 
         public void addAttendedAndIncrementLunchesAttended() {
             try{
+                System.out.println("incrementing lunches attended.");
                 Stat attendesLowerBound = zk.exists(this.lunchPath + "/readyforlunch", true);
-                Stat attendesUpperBound = zk.exists(this.lunchPath + "/lunchtime ", true);
+                Stat attendesUpperBound = zk.exists(this.lunchPath + "/lunchtime", true);
                 Stat lunchZNode = zk.exists(this.lunchPath + "/zk-" + this.name, true);
 
                 List<String> lunchChildren = zk.getChildren(this.lunchPath, true);
-                List<String> attendes = null;
+                List<String> attendes = new ArrayList<String>();
 
                 for(int i = 0; i<lunchChildren.size(); i++){
                     String child = lunchChildren.get(i);
@@ -307,6 +315,7 @@ public class Main {
                 }
             }
             catch (Exception e){
+                System.out.println(e.getMessage());
                 System.out.println("Error in incrementing number of lunches attended");
             }
         }
@@ -323,10 +332,28 @@ public class Main {
             }
         }
 
+        public void deleteLeaderNode(){
+            try{
+                String deletePath = this.lunchPath + "/leader";
+                if(doesPathExist(deletePath)){
+                    int version = zk.exists(deletePath, true).getVersion();
+                    zk.delete(deletePath, version);
+                }
+                else{
+                    System.out.println("Path does not exist for the node to be deleted.");
+                }
+
+            }
+            catch (Exception e){
+                System.out.println("Error in deleting leader node.");
+            }
+        }
+
         public void readyForLunch() {
             String createWatchPath = this.lunchPath + "/readyforlunch";
             String lunchTimeWatchPath = this.lunchPath + "/lunchtime";
             String DeleteWatchPath = this.lunchPath + "/lunchtime";
+            String DeleteWatchPath2 = this.lunchPath + "/readyforlunch";
             Watcher watchForCreate = new Watcher() {
                 @Override
                 public void process(WatchedEvent watchedEvent) {
@@ -334,7 +361,7 @@ public class Main {
                         skip_next_lunch = Boolean.FALSE;
                         return;
                     }
-                    if (watchedEvent.getPath().equals(createWatchPath) && watchedEvent.getType() == Event.EventType.NodeCreated){
+                    if (watchedEvent.getPath().equals(createWatchPath) && watchedEvent.getType().equals(Event.EventType.NodeCreated)){
                         createZNodeForLunch();
                         chooseLeader();
                     }
@@ -367,13 +394,51 @@ public class Main {
             Watcher watchForDelete = new Watcher() {
                 @Override
                 public void process(WatchedEvent watchedEvent) {
-                    if(watchedEvent.getPath().equals(DeleteWatchPath) && watchedEvent.getType() == Event.EventType.NodeDeleted){
+                    if((watchedEvent.getPath().equals(DeleteWatchPath))  && watchedEvent.getType() == Event.EventType.NodeDeleted){
                         deleteZNodeForLunch();
+                        try {
+                            zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
+                            zk.addWatch(lunchTimeWatchPath, watchForLunchTime, AddWatchMode.PERSISTENT);
+                        }
+                        catch (Exception e){
+                            System.out.println(e.getMessage());
+                        }
+                        if(isCurrentLeader == Boolean.TRUE){
+                            deleteLeaderNode();
+                            isCurrentLeader = Boolean.FALSE;
+                        }
                     }
                 }
             };
             try {
                 zk.addWatch(DeleteWatchPath, watchForDelete, AddWatchMode.PERSISTENT);
+            }
+            catch(Exception e){
+                System.out.println(e.getMessage());
+                System.out.println("Error adding watch for deleting znode.");
+            }
+
+            Watcher watchForDelete2 = new Watcher() {
+                @Override
+                public void process(WatchedEvent watchedEvent) {
+                    if((watchedEvent.getPath().equals(DeleteWatchPath2))  && watchedEvent.getType() == Event.EventType.NodeDeleted){
+                        deleteZNodeForLunch();
+                        try {
+                            zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
+                            zk.addWatch(lunchTimeWatchPath, watchForLunchTime, AddWatchMode.PERSISTENT);
+                        }
+                        catch (Exception e){
+                            System.out.println(e.getMessage());
+                        }
+                        if(isCurrentLeader == Boolean.TRUE){
+                            deleteLeaderNode();
+                            isCurrentLeader = Boolean.FALSE;
+                        }
+                    }
+                }
+            };
+            try {
+                zk.addWatch(DeleteWatchPath2, watchForDelete2, AddWatchMode.PERSISTENT);
             }
             catch(Exception e){
                 System.out.println(e.getMessage());
