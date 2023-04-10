@@ -28,6 +28,7 @@ public class Main {
     public static Boolean isCurrentLeader = Boolean.FALSE;
     public static List<Long> czxids_of_lunch_attend = new ArrayList<Long>();
     public static Boolean skip_next_lunch = Boolean.FALSE;
+    public static Boolean isPrevLeader = Boolean.FALSE;
     public static HashMap<Long, String> zxid_to_leader = new HashMap<Long, String>();
     public static HashMap<Long, List<String>> zxid_to_attendes = new HashMap<Long, List<String>>();
     public static class ZooLunchServiceImpl extends ZooLunchImplBase {
@@ -230,6 +231,13 @@ public class Main {
                         break;
                     }
                     try{
+                        if(isPrevLeader == Boolean.TRUE){
+                            while(waiting_time > 0){
+                                Thread.sleep(waiting_time*1000);
+                                waiting_time = waiting_time - 1;
+                            }
+                            isPrevLeader = Boolean.FALSE;
+                        }
                         this.zk.create(this.lunchPath + "/leader", this.name.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                         System.out.println("I have become the leader");
                         isCurrentLeader = Boolean.TRUE;
@@ -240,10 +248,14 @@ public class Main {
                         if(waiting_time > 0){
                             try {
                                 Thread.sleep(waiting_time*1000);
+                                System.out.println("I will wait for following seconds to get elected:" + waiting_time);
                                 waiting_time = waiting_time - 1;
                             } catch (InterruptedException ex) {
                                 throw new RuntimeException(ex);
                             }
+                        }
+                        else{
+                            break;
                         }
 
                     }
@@ -357,6 +369,12 @@ public class Main {
             Watcher watchForCreate = new Watcher() {
                 @Override
                 public void process(WatchedEvent watchedEvent) {
+                    try{
+                        zk.exists(createWatchPath, this);
+                    }
+                    catch(Exception e){
+                        System.out.println(e.getMessage());
+                    }
                     if(skip_next_lunch == Boolean.TRUE){
                         skip_next_lunch = Boolean.FALSE;
                         return;
@@ -368,7 +386,7 @@ public class Main {
                 }
             };
             try{
-                zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
+                zk.exists(createWatchPath, watchForCreate);
             }
             catch(Exception e){
                 System.out.println("Error adding watch for creating znode.");
@@ -377,6 +395,12 @@ public class Main {
             Watcher watchForLunchTime = new Watcher() {
                 @Override
                 public void process(WatchedEvent watchedEvent) {
+                    try{
+                        zk.exists(lunchTimeWatchPath, this);
+                    }
+                    catch(Exception e){
+                        System.out.println(e.getMessage());
+                    }
                     if(watchedEvent.getPath().equals(lunchTimeWatchPath) && watchedEvent.getType() == Event.EventType.NodeCreated){
                         addAttendedAndIncrementLunchesAttended();
                         findLunchLeader();
@@ -385,7 +409,7 @@ public class Main {
                 }
             };
             try{
-                zk.addWatch(lunchTimeWatchPath, watchForLunchTime, AddWatchMode.PERSISTENT);
+                zk.exists(lunchTimeWatchPath, watchForLunchTime);
             }
             catch (Exception e){
                 System.out.println("Error adding watch for lunch time.");
@@ -396,16 +420,10 @@ public class Main {
                 public void process(WatchedEvent watchedEvent) {
                     if((watchedEvent.getPath().equals(DeleteWatchPath))  && watchedEvent.getType() == Event.EventType.NodeDeleted){
                         deleteZNodeForLunch();
-                        try {
-                            zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
-                            zk.addWatch(lunchTimeWatchPath, watchForLunchTime, AddWatchMode.PERSISTENT);
-                        }
-                        catch (Exception e){
-                            System.out.println(e.getMessage());
-                        }
                         if(isCurrentLeader == Boolean.TRUE){
                             deleteLeaderNode();
                             isCurrentLeader = Boolean.FALSE;
+                            isPrevLeader = Boolean.TRUE;
                         }
                     }
                 }
@@ -423,16 +441,10 @@ public class Main {
                 public void process(WatchedEvent watchedEvent) {
                     if((watchedEvent.getPath().equals(DeleteWatchPath2))  && watchedEvent.getType() == Event.EventType.NodeDeleted){
                         deleteZNodeForLunch();
-                        try {
-                            zk.addWatch(createWatchPath, watchForCreate, AddWatchMode.PERSISTENT);
-                            zk.addWatch(lunchTimeWatchPath, watchForLunchTime, AddWatchMode.PERSISTENT);
-                        }
-                        catch (Exception e){
-                            System.out.println(e.getMessage());
-                        }
                         if(isCurrentLeader == Boolean.TRUE){
                             deleteLeaderNode();
                             isCurrentLeader = Boolean.FALSE;
+                            isPrevLeader = Boolean.TRUE;
                         }
                     }
                 }
