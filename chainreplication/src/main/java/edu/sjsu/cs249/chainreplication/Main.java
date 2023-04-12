@@ -35,13 +35,13 @@ public class Main {
 
         @Override
         public Integer call() throws Exception {
-            ServerCLI server = new ServerCLI(name, grpcHostPort, zkHostPorts, controlPath);
-            server.start();
-
             ChainNode node = new ChainNode(name, grpcHostPort, zkHostPorts, controlPath);
             node.createChainNode();
             node.findPredecessor();
             node.findSuccessor();
+
+            ServerCLI server = new ServerCLI(name, grpcHostPort, zkHostPorts, controlPath, node);
+            server.start();
 
             server.join();
 

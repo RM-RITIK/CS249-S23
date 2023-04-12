@@ -1,11 +1,13 @@
 package edu.sjsu.cs249.chainreplication;
 
-import edu.sjsu.cs249.chain.ReplicaGrpc;
+import edu.sjsu.cs249.chain.*;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.stub.StreamObserver;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
 import java.util.List;
+import java.util.HashMap;
 
 import static org.apache.zookeeper.CreateMode.*;
 
@@ -15,15 +17,26 @@ public class ChainNode {
     private String zkHostPorts;
     private String controlPath;
     private Long chainNodeSequenceNumber;
-    public ZooKeeper zk;
+    public  ZooKeeper zk;
     public String predecessorNode = null;
     public String successorNode = null;
+    public HashMap<String, Integer> nodeState;
+    public HashMap<UpdateRequest, StreamObserver<HeadResponse>> incReqToClient;
+    public Boolean amIHead = Boolean.FALSE;
+    public Boolean amITail = Boolean.FALSE;
+    public List<UpdateRequest> sentMessages;
+    Integer lastXIdSeen = null;
+    Integer lastXidAck = null;
+    Integer lastZxIdSeen = null;
 
     ChainNode(String name, String grpcHostPort, String zkHostPorts, String controlPath){
         this.name = name;
         this.grpcHostPort = grpcHostPort;
         this.zkHostPorts = zkHostPorts;
         this.controlPath = controlPath;
+        this.nodeState = new HashMap<String, Integer>();
+        this.incReqToClient = new HashMap<UpdateRequest, StreamObserver<HeadResponse>>();
+
         try {
             this.zk = new ZooKeeper(zkHostPorts, 10000, (e) -> {System.out.println(e);});
         }
@@ -64,7 +77,7 @@ public class ChainNode {
                     if(predecessorNode != null){
                         try{
                             Stat newPredecessorNode = zk.exists(controlPath + "/" + predecessorNode, true);
-                            byte[] nodeDataBytes = zk.getData(controlPath + "/" + predecessorPath, true, newPredecessorNode);
+                            byte[] nodeDataBytes = zk.getData(controlPath + "/" + predecessorNode, true, newPredecessorNode);
                             String nodeData = nodeDataBytes.toString();
                             int newLineIndex = nodeData.indexOf("\n");
                             String predHostPort = nodeData.substring(0, newLineIndex);
@@ -74,6 +87,11 @@ public class ChainNode {
                             var port = Integer.parseInt(predHostPort.substring(lastColon+1));
                             var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
                             var stub = ReplicaGrpc.newBlockingStub(channel);
+
+                            NewSuccessorRequest request = NewSuccessorRequest.newBuilder().setLastZxidSeen(lastZxIdSeen).setLastXid(lastXIdSeen != null ? lastXIdSeen : -1)
+                                    .setLastAck(lastXidAck != null ? lastXidAck : -1).setZnodeName(name).build();
+
+                            NewSuccessorResponse response = stub.newSuccessor(request);
 
                             //send a message to the predecessor that I am the new successor via
                             //blocking stub.
@@ -98,31 +116,6 @@ public class ChainNode {
         }
     }
 
-    public Boolean addWatchForSuccessorNode(String node){
-        String successorPath = this.controlPath + "/" + node;
-
-        Watcher watchForSuccessor = new Watcher() {
-            @Override
-            public void process(WatchedEvent watchedEvent) {
-                if(watchedEvent.getPath().equals(successorPath) && watchedEvent.getType() == Event.EventType.NodeDeleted){
-                    findSuccessor();
-                    if(successorNode != null){
-                        //do some action
-                    }
-                }
-            }
-        };
-
-        try{
-            this.zk.addWatch(successorPath, watchForSuccessor, AddWatchMode.PERSISTENT);
-            return Boolean.TRUE;
-        }
-        catch (Exception e){
-            System.out.println(e.getMessage());
-            return Boolean.FALSE;
-        }
-
-    }
 
     public void findPredecessor() {
         try{
@@ -137,8 +130,14 @@ public class ChainNode {
 
             if(this.predecessorNode != null){
                 this.addWatchForPredecessorNode(this.predecessorNode);
+                this.amIHead = Boolean.FALSE;
+            }
+            else{
+                this.amIHead = Boolean.TRUE;
             }
 
+            Stat baseDirectory = this.zk.exists(this.controlPath, true);
+            this.lastZxIdSeen = (int) baseDirectory.getPzxid();
         }
         catch (Exception e){
             System.out.println(e.getMessage());
@@ -158,7 +157,10 @@ public class ChainNode {
             }
 
             if(this.successorNode != null){
-                this.addWatchForSuccessorNode(this.successorNode);
+                this.amITail = Boolean.FALSE;
+            }
+            else{
+                this.amITail = Boolean.TRUE;
             }
 
         }
@@ -166,5 +168,22 @@ public class ChainNode {
             System.out.println(e.getMessage());
         }
 
+    }
+
+    public void incrementTable(String key, int value) {
+        int prevValue = this.nodeState.getOrDefault(key, 0);
+        this.nodeState.put(key, value + prevValue);
+    }
+
+    public void updateTable(String key, int value) {
+        this.nodeState.put(key, value);
+    }
+
+    public void updateLastXidSeen(Integer XId) {
+        this.lastXIdSeen = XId;
+    }
+
+    public void updateLastXidAck(Integer XId){
+        this.lastXidAck = XId;
     }
 }
