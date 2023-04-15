@@ -1,11 +1,11 @@
 package edu.sjsu.cs249.chainreplication;
 
 import edu.sjsu.cs249.chain.*;
-import io.grpc.Grpc;
 import io.grpc.stub.StreamObserver;
 import io.grpc.ManagedChannelBuilder;
 import org.apache.zookeeper.data.Stat;
 
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaImplBase {
@@ -25,6 +25,7 @@ public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaI
 
     @Override
     public void increment(IncRequest request, StreamObserver<HeadResponse> responseObserver) {
+        System.out.println("I got the increment request.");
         String key = request.getKey();
         int value = request.getIncValue();
         if(this.node.amIHead == Boolean.FALSE){
@@ -53,7 +54,7 @@ public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaI
                 try{
                     Stat successorNode = this.node.zk.exists(this.controlPath + "/" + this.node.successorNode, true);
                     byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.successorNode, true, successorNode);
-                    String nodeData = nodeDataBytes.toString();
+                    String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
                     int newLineIndex = nodeData.indexOf("\n");
                     String succHostPort = nodeData.substring(0, newLineIndex);
 

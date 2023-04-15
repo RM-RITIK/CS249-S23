@@ -5,6 +5,7 @@ import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import org.apache.zookeeper.data.Stat;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
@@ -34,7 +35,7 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
             try{
                 Stat successorNode = this.node.zk.exists(this.controlPath + "/" + this.node.successorNode, true);
                 byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.successorNode, true, successorNode);
-                String nodeData = nodeDataBytes.toString();
+                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
                 int newLineIndex = nodeData.indexOf("\n");
                 String succHostPort = nodeData.substring(0, newLineIndex);
 
@@ -57,7 +58,7 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
             try{
                 Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
                 byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
-                String nodeData = nodeDataBytes.toString();
+                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
                 int newLineIndex = nodeData.indexOf("\n");
                 String predHostPort = nodeData.substring(0, newLineIndex);
 
@@ -116,7 +117,7 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
                         try{
                             Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
                             byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
-                            String nodeData = nodeDataBytes.toString();
+                            String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
                             int newLineIndex = nodeData.indexOf("\n");
                             String predHostPort = nodeData.substring(0, newLineIndex);
 
@@ -188,13 +189,14 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
                 this.node.incReqToClient.get(updateRequest).onNext(response);
                 this.node.incReqToClient.get(updateRequest).onCompleted();
                 this.node.incReqToClient.remove(updateRequest);
+                System.out.println("I have sent the response to the client.");
             }
         }
         else{
             try{
                 Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
                 byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
-                String nodeData = nodeDataBytes.toString();
+                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
                 int newLineIndex = nodeData.indexOf("\n");
                 String predHostPort = nodeData.substring(0, newLineIndex);
 

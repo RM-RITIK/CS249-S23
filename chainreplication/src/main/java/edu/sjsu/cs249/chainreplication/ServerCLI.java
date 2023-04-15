@@ -30,6 +30,7 @@ public class ServerCLI extends Thread {
                     .addService(new HeadChainReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node))
                     .addService(new TailChainReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node))
                     .addService(new ReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node))
+                    .addService(new ChainDebugImpl(this.node))
                     .build();
 
             server.start();
