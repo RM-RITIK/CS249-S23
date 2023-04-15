@@ -27,7 +27,7 @@ public class ChainNode {
     public List<UpdateRequest> sentMessages;
     Integer lastXIdSeen = null;
     Integer lastXidAck = null;
-    Integer lastZxIdSeen = null;
+    Long lastZxIdSeen = null;
 
     ChainNode(String name, String grpcHostPort, String zkHostPorts, String controlPath){
         this.name = name;
@@ -67,12 +67,27 @@ public class ChainNode {
         return Long.parseLong(node.substring(8));
     }
 
+    public void updateNodeState(NewSuccessorResponse response){
+        if(response.getRc() == 0){
+            this.nodeState = (HashMap<String, Integer>) response.getState();
+            this.sentMessages = response.getSentList();
+            this.lastXIdSeen = response.getLastXid();
+        }
+        else if(response.getRc() == 1){
+            this.sentMessages.addAll(response.getSentList());
+            this.lastXIdSeen = response.getLastXid();
+        }
+        else{
+            System.out.println("The predecessor refused to accept me as a successor.");
+        }
+    }
+
     public Boolean addWatchForPredecessorNode(String node) {
         String predecessorPath = this.controlPath + "/" + node;
         Watcher watchForPredecessor = new Watcher() {
             @Override
             public void process(WatchedEvent watchedEvent) {
-                if(watchedEvent.getPath().equals(predecessorPath) && watchedEvent.getType() == Event.EventType.NodeDeleted){
+                if(watchedEvent.getPath() == predecessorPath && watchedEvent.getType() == Event.EventType.NodeDeleted){
                     findPredecessor();
                     if(predecessorNode != null){
                         try{
@@ -89,12 +104,12 @@ public class ChainNode {
                             var stub = ReplicaGrpc.newBlockingStub(channel);
 
                             NewSuccessorRequest request = NewSuccessorRequest.newBuilder().setLastZxidSeen(lastZxIdSeen).setLastXid(lastXIdSeen != null ? lastXIdSeen : -1)
-                                    .setLastAck(lastXidAck != null ? lastXidAck : -1).setZnodeName(name).build();
+                                    .setLastAck(lastXidAck != null ? lastXidAck : -1).setZnodeName("replica-" + Long.toString(chainNodeSequenceNumber)).build();
 
                             NewSuccessorResponse response = stub.newSuccessor(request);
 
-                            //send a message to the predecessor that I am the new successor via
-                            //blocking stub.
+                            updateNodeState(response);
+
 
                         }
                         catch (Exception e){
@@ -108,6 +123,53 @@ public class ChainNode {
 
         try{
             this.zk.addWatch(predecessorPath, watchForPredecessor, AddWatchMode.PERSISTENT);
+            return Boolean.TRUE;
+        }
+        catch (Exception e){
+            System.out.println(e.getMessage());
+            return Boolean.FALSE;
+        }
+    }
+
+    public Boolean addWatchForSuccessorNode(String node) {
+        String succPath = this.controlPath + "/" + node;
+        Watcher watchForSucc = new Watcher() {
+            @Override
+            public void process(WatchedEvent watchedEvent) {
+                if(watchedEvent.getPath().equals(succPath) && watchedEvent.getType() == Event.EventType.NodeDeleted){
+                    findSuccessor();
+                    if(successorNode == null){
+                        try{
+                            Stat predecessorNodeStat = zk.exists(controlPath + "/" + predecessorNode, true);
+                            byte[] nodeDataBytes = zk.getData(controlPath + "/" + predecessorNode, true, predecessorNodeStat);
+                            String nodeData = nodeDataBytes.toString();
+                            int newLineIndex = nodeData.indexOf("\n");
+                            String predHostPort = nodeData.substring(0, newLineIndex);
+
+                            var lastColon = predHostPort.lastIndexOf(':');
+                            var host = predHostPort.substring(0, lastColon);
+                            var port = Integer.parseInt(predHostPort.substring(lastColon+1));
+                            var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+                            var stub = ReplicaGrpc.newBlockingStub(channel);
+
+                            for(int i = 0; i<sentMessages.size(); i++){
+                                AckRequest request = AckRequest.newBuilder().setXid(sentMessages.get(i).getXid()).build();
+                                AckResponse response = stub.ack(request);
+                            }
+
+
+                        }
+                        catch (Exception e){
+                            System.out.println(e.getMessage());
+                        }
+                    }
+
+                }
+            }
+        };
+
+        try{
+            this.zk.addWatch(succPath, watchForSucc, AddWatchMode.PERSISTENT);
             return Boolean.TRUE;
         }
         catch (Exception e){
@@ -137,7 +199,7 @@ public class ChainNode {
             }
 
             Stat baseDirectory = this.zk.exists(this.controlPath, true);
-            this.lastZxIdSeen = (int) baseDirectory.getPzxid();
+            this.lastZxIdSeen = baseDirectory.getPzxid();
         }
         catch (Exception e){
             System.out.println(e.getMessage());
@@ -157,6 +219,7 @@ public class ChainNode {
             }
 
             if(this.successorNode != null){
+                this.addWatchForSuccessorNode(this.successorNode);
                 this.amITail = Boolean.FALSE;
             }
             else{
