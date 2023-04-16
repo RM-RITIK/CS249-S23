@@ -7,7 +7,7 @@ import org.apache.zookeeper.data.Stat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.List;
 
 public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
@@ -24,37 +24,19 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
         this.controlPath = controlPath;
         this.node = node;
     }
-    @Override
-    public void update(UpdateRequest request, StreamObserver<UpdateResponse> responseObserver) {
-        String key = request.getKey();
-        int value = request.getNewValue();
-        int XId = request.getXid();
-        this.node.updateTable(key, value);
-        this.node.updateLastXidSeen(XId);
-        if(this.node.amITail == Boolean.FALSE){
-            try{
-                Stat successorNode = this.node.zk.exists(this.controlPath + "/" + this.node.successorNode, true);
-                byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.successorNode, true, successorNode);
-                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
-                int newLineIndex = nodeData.indexOf("\n");
-                String succHostPort = nodeData.substring(0, newLineIndex);
 
-                var lastColon = succHostPort.lastIndexOf(':');
-                var host = succHostPort.substring(0, lastColon);
-                var port = Integer.parseInt(succHostPort.substring(lastColon+1));
-                var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
-                var stub = ReplicaGrpc.newBlockingStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
-
-                UpdateRequest updateRequest = UpdateRequest.newBuilder().setKey(key).setNewValue(this.node.nodeState.get(key)).setXid(XId).build();
-                this.node.sentMessages.add(updateRequest);
-                UpdateResponse response = stub.update(updateRequest);
-            }
-            catch (Exception e){
-                System.out.println(e.getMessage());
-            }
+    class sendAcknowledgementRequest implements Runnable {
+        private ChainNode node;
+        public String controlPath;
+        int XId;
+        sendAcknowledgementRequest(ChainNode node, String controlPath, int XId){
+            this.node = node;
+            this.controlPath = controlPath;
+            this.XId = XId;
         }
-        else{
-            this.node.updateLastXidAck(XId);
+
+        @Override
+        public void run() {
             try{
                 Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
                 byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
@@ -66,19 +48,168 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
                 var host = predHostPort.substring(0, lastColon);
                 var port = Integer.parseInt(predHostPort.substring(lastColon+1));
                 var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
-                var stub = ReplicaGrpc.newBlockingStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+                var stub = ReplicaGrpc.newStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+                AckRequest ackRequest = AckRequest.newBuilder().setXid(this.XId).build();
+                StreamObserver<AckResponse> newResponseObserver = new StreamObserver<AckResponse>() {
+                    @Override
+                    public void onNext(AckResponse ackResponse) {
+                    }
 
-                AckResponse response = stub.ack(AckRequest.newBuilder().setXid(XId).build());
+                    @Override
+                    public void onError(Throwable throwable) {
+                        channel.shutdown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        channel.shutdown();
+                    }
+                };
+                stub.ack(ackRequest, newResponseObserver);
             }
             catch (Exception e){
                 System.out.println(e.getMessage());
             }
+
+        }
+    }
+
+    class sendUpdateRequestToSuccessor implements Runnable {
+        private ChainNode node;
+        public String controlPath;
+        public String key;
+        int XId;
+        sendUpdateRequestToSuccessor(ChainNode node, String controlPath, String key, int XId){
+            this.node = node;
+            this.controlPath = controlPath;
+            this.key = key;
+            this.XId = XId;
         }
 
+        @Override
+        public void run() {
+            try{
+                Stat successorNode = this.node.zk.exists(this.controlPath + "/" + this.node.successorNode, true);
+                byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.successorNode, true, successorNode);
+                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
+                int newLineIndex = nodeData.indexOf("\n");
+                String succHostPort = nodeData.substring(0, newLineIndex);
+
+                var lastColon = succHostPort.lastIndexOf(':');
+                var host = succHostPort.substring(0, lastColon);
+                var port = Integer.parseInt(succHostPort.substring(lastColon+1));
+                var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+                var stub = ReplicaGrpc.newStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+
+                UpdateRequest updateRequest = UpdateRequest.newBuilder().setKey(this.key).setNewValue(this.node.nodeState.get(this.key)).setXid(this.XId).build();
+                this.node.sentMessages.add(updateRequest);
+                StreamObserver<UpdateResponse> newResponseObserver = new StreamObserver<UpdateResponse>() {
+                    @Override
+                    public void onNext(UpdateResponse updateResponse) {
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        channel.shutdown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        channel.shutdown();
+
+                    }
+                };
+                stub.update(updateRequest, newResponseObserver);
+            }
+            catch (Exception e){
+                System.out.println(e.getMessage());
+            }
+
+        }
+    }
+
+    @Override
+    public void update(UpdateRequest request, StreamObserver<UpdateResponse> responseObserver) {
+        String key = request.getKey();
+        int value = request.getNewValue();
+        int XId = request.getXid();
+        this.node.updateTable(key, value);
+        this.node.updateLastXidSeen(XId);
+        if(this.node.amITail == Boolean.FALSE){
+            sendUpdateRequestToSuccessor updateRequest = new sendUpdateRequestToSuccessor(this.node, this.controlPath, key, XId);
+            FutureTask<String> updateTask = new FutureTask<>(updateRequest, "sent the update request to my successor");
+
+            ExecutorService executor = Executors.newFixedThreadPool(1);
+            executor.submit(updateTask);
+        }
+        else{
+            this.node.updateLastXidAck(XId);
+            sendAcknowledgementRequest ackRequest = new sendAcknowledgementRequest(this.node, this.controlPath, XId);
+            FutureTask<String> ackTask = new FutureTask<>(ackRequest, "sent the ack request.");
+
+            ExecutorService executor = Executors.newFixedThreadPool(1);
+            executor.submit(ackTask);
+
+        }
         UpdateResponse response = UpdateResponse.newBuilder().build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
 
+    }
+
+    class sendAllPendingAckRequests implements Runnable{
+        private ChainNode node;
+        public String controlPath;
+       public int succLastAck;
+       sendAllPendingAckRequests(ChainNode node, String controlPath, int succLastAck){
+           this.node = node;
+           this.controlPath = controlPath;
+           this.succLastAck = succLastAck;
+       }
+
+        @Override
+        public void run() {
+            try{
+                Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
+                byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
+                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
+                int newLineIndex = nodeData.indexOf("\n");
+                String predHostPort = nodeData.substring(0, newLineIndex);
+
+                var lastColon = predHostPort.lastIndexOf(':');
+                var host = predHostPort.substring(0, lastColon);
+                var port = Integer.parseInt(predHostPort.substring(lastColon+1));
+                var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
+                var stub = ReplicaGrpc.newStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
+                for(int i = 0; i<this.node.sentMessages.size(); i++){
+                    if(this.node.sentMessages.get(i).getXid() <= this.succLastAck){
+                        AckRequest request = AckRequest.newBuilder().setXid(this.node.sentMessages.get(i).getXid()).build();
+                        StreamObserver<AckResponse> responseObserver = new StreamObserver<AckResponse>() {
+                            @Override
+                            public void onNext(AckResponse ackResponse) {
+
+                            }
+
+                            @Override
+                            public void onError(Throwable throwable) {
+                                channel.shutdown();
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                channel.shutdown();
+                            }
+                        };
+                        stub.ack(request, responseObserver);
+                    }
+                }
+
+            }
+            catch (Exception e){
+                System.out.println(e.getMessage());
+            }
+
+        }
     }
 
     @Override
@@ -114,28 +245,12 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
                         }
                     }
                     else{
-                        try{
-                            Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
-                            byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
-                            String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
-                            int newLineIndex = nodeData.indexOf("\n");
-                            String predHostPort = nodeData.substring(0, newLineIndex);
+                        sendAllPendingAckRequests ackPendingRequests = new sendAllPendingAckRequests(this.node, this.controlPath, succLastAck);
+                        FutureTask<String> ackPendingTask = new FutureTask<String>(ackPendingRequests, "sent ack to all pending requests");
 
-                            var lastColon = predHostPort.lastIndexOf(':');
-                            var host = predHostPort.substring(0, lastColon);
-                            var port = Integer.parseInt(predHostPort.substring(lastColon+1));
-                            var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
-                            var stub = ReplicaGrpc.newBlockingStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
-                            for(int i = 0; i<this.node.sentMessages.size(); i++){
-                                if(this.node.sentMessages.get(i).getXid() <= succLastAck){
-                                    AckResponse response = stub.ack(AckRequest.newBuilder().setXid(this.node.sentMessages.get(i).getXid()).build());
-                                }
-                            }
+                        ExecutorService executor = Executors.newFixedThreadPool(1);
+                        executor.submit(ackPendingTask);
 
-                        }
-                        catch (Exception e){
-                            System.out.println(e.getMessage());
-                        }
 
                     }
                     for(int i = 0; i<this.node.sentMessages.size(); i++){
@@ -189,28 +304,14 @@ public class ReplicaImpl extends ReplicaGrpc.ReplicaImplBase {
                 this.node.incReqToClient.get(updateRequest).onNext(response);
                 this.node.incReqToClient.get(updateRequest).onCompleted();
                 this.node.incReqToClient.remove(updateRequest);
-                System.out.println("I have sent the response to the client.");
             }
         }
         else{
-            try{
-                Stat predecessorNode = this.node.zk.exists(this.controlPath + "/" + this.node.predecessorNode, true);
-                byte[] nodeDataBytes = this.node.zk.getData(this.controlPath + "/" + this.node.predecessorNode, true, predecessorNode);
-                String nodeData = new String(nodeDataBytes, StandardCharsets.UTF_8);
-                int newLineIndex = nodeData.indexOf("\n");
-                String predHostPort = nodeData.substring(0, newLineIndex);
+            sendAcknowledgementRequest ackRequest = new sendAcknowledgementRequest(this.node, this.controlPath, XId);
+            FutureTask<String> ackTask = new FutureTask<String>(ackRequest, "sent the ack request to my predecessor");
 
-                var lastColon = predHostPort.lastIndexOf(':');
-                var host = predHostPort.substring(0, lastColon);
-                var port = Integer.parseInt(predHostPort.substring(lastColon+1));
-                var channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
-                var stub = ReplicaGrpc.newBlockingStub(channel).withDeadlineAfter(3, TimeUnit.SECONDS);
-
-                AckResponse response = stub.ack(AckRequest.newBuilder().setXid(XId).build());
-            }
-            catch (Exception e){
-                System.out.println(e.getMessage());
-            }
+            ExecutorService executor = Executors.newFixedThreadPool(1);
+            executor.submit(ackTask);
         }
         AckResponse response = AckResponse.newBuilder().build();
         responseObserver.onNext(response);

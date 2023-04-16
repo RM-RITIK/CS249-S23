@@ -51,12 +51,12 @@ public class ChainNode {
         @Override
         public void process(WatchedEvent watchedEvent) {
             try{
-                zk.getChildren(controlPath, this);
+               List<String> children =  zk.getChildren(controlPath, this);
             }
             catch (Exception e){
 
             }
-            if(watchedEvent.getPath().equals(controlPath)){
+            if(watchedEvent.getPath().equals(controlPath) && watchedEvent.getType() == Event.EventType.NodeChildrenChanged){
                 findPredecessor();
                 findSuccessor();
                 if(predecessorNode != null){
@@ -125,6 +125,7 @@ public class ChainNode {
             String data = this.grpcHostPort + "\n" + this.name;
             String chainNodePath = this.zk.create(this.controlPath + "/replica-", data.getBytes(StandardCharsets.UTF_8), ZooDefs.Ids.OPEN_ACL_UNSAFE, EPHEMERAL_SEQUENTIAL);
             this.chainNodeSequenceNumber = Long.parseLong(chainNodePath.substring(chainNodePath.length() - 10));
+            List<String> chainNodes = this.zk.getChildren(this.controlPath, controlPathWatcher);
             return Boolean.TRUE;
 
         }
@@ -155,7 +156,8 @@ public class ChainNode {
     
     public void findPredecessor() {
         try{
-            List<String> chainNodes = this.zk.getChildren(this.controlPath, controlPathWatcher);
+            this.predecessorNode = null;
+            List<String> chainNodes = this.zk.getChildren(this.controlPath, true);
 
             for(int i = 0; i < chainNodes.size(); i++){
                 if(getNodeSequenceNumber(chainNodes.get(i)) < this.chainNodeSequenceNumber &&
@@ -168,7 +170,6 @@ public class ChainNode {
             }
             else{
                 this.amIHead = Boolean.TRUE;
-                System.out.println("I am the head");
             }
             Stat baseDirectory = this.zk.exists(this.controlPath, true);
             this.lastZxIdSeen = baseDirectory.getPzxid();
@@ -181,7 +182,8 @@ public class ChainNode {
 
     public void findSuccessor() {
         try{
-            List<String> chainNodes = this.zk.getChildren(this.controlPath, controlPathWatcher);
+            this.successorNode = null;
+            List<String> chainNodes = this.zk.getChildren(this.controlPath, true);
 
             for(int i = 0; i < chainNodes.size(); i++){
                 if(getNodeSequenceNumber(chainNodes.get(i)) > this.chainNodeSequenceNumber &&
