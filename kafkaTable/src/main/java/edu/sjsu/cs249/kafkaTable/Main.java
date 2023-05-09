@@ -61,6 +61,7 @@ public class Main {
         public Integer call() throws Exception {
             ReentrantLock lock = new ReentrantLock();
             Replica replica = new Replica(kafkaServer, replicaName, messagesToTakeTheSnapshot, topicPrefix, lock);
+            replica.consumeAlreadyExistingSnapshot();
             replica.publishInSnapshotOrdering();
 
             ServerCLI server = new ServerCLI(kafkaServer, replicaName, grpcPort, messagesToTakeTheSnapshot, topicPrefix, replica);

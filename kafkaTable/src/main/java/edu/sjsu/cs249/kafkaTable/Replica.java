@@ -55,8 +55,57 @@ public class Replica {
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId);
         properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1");
-        this.SnapshotOrderingConsumer = new KafkaConsumer<>(properties, new StringDeserializer(), new ByteArrayDeserializer());
+        StringDeserializer deserializer = new StringDeserializer();
+        deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+        ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
+        arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+        this.SnapshotOrderingConsumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
         this.SnapshotOrderingConsumer.subscribe(List.of(this.topicPrefix + "snapshotOrdering"));
+    }
+
+    public void consumeAlreadyExistingSnapshot() {
+        //consume if a snapshot is there in the snapshot topic
+        try{
+            var properties = new Properties();
+            properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
+            properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId);
+
+            StringDeserializer deserializer = new StringDeserializer();
+            deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+            ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
+            arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+            var snapshotConsumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
+            snapshotConsumer.subscribe(List.of(this.topicPrefix + "snapshot"));
+            var snapshotRecords = snapshotConsumer.poll(Duration.ofMillis(1));
+            var maxRecord = new ConsumerRecord<String, byte[]>("snapshot", 0, 0, null, null);
+            long maxOffset = -1;
+            for(var record: snapshotRecords){
+                if(record.offset() > maxOffset){
+                    maxOffset = record.offset();
+                    maxRecord = record;
+                }
+            }
+
+            if(maxOffset != -1){
+                Snapshot latestSnapshot = Snapshot.parseFrom(maxRecord.value());
+                this.state = latestSnapshot.getTable();
+                this.operationsOffset = latestSnapshot.getOperationsOffset();
+                this.clientCounter = latestSnapshot.getClientCounters();
+                //Update the snapshot offset
+                this.snapshotOffset = latestSnapshot.getSnapshotOrderingOffset();
+            }
+            else{
+                System.out.println("No snapshot is there in snapshot topics.");
+            }
+
+            snapshotConsumer.unsubscribe();
+            snapshotConsumer.close();
+
+        }
+        catch (Exception e){
+            System.out.println(e.getMessage());
+        }
     }
 
     public void publishInSnapshotOrdering() {
@@ -111,62 +160,48 @@ public class Replica {
         else{
             System.out.println("I am already published in the snapshot ordering ");
         }
-
-        //consume if a snapshot is there in the snapshot topic
-        try{
-            StringDeserializer deserializer = new StringDeserializer();
-            deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
-            ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
-            arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
-            var snapshotConsumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
-            snapshotConsumer.subscribe(List.of(this.topicPrefix + "snapshot"));
-            var snapshotRecords = snapshotConsumer.poll(Duration.ofMillis(1));
-            var maxRecord = new ConsumerRecord<String, byte[]>("snapshot", 0, 0, null, null);
-            long maxOffset = -1;
-            for(var record: snapshotRecords){
-                if(record.offset() > maxOffset){
-                    maxOffset = record.offset();
-                    maxRecord = record;
-                }
-            }
-
-            if(maxOffset != -1){
-                Snapshot latestSnapshot = Snapshot.parseFrom(maxRecord.value());
-                this.state = latestSnapshot.getTable();
-                this.operationsOffset = latestSnapshot.getOperationsOffset();
-                this.clientCounter = latestSnapshot.getClientCounters();
-                //Update the snapshot offset
-                this.snapshotOffset = latestSnapshot.getSnapshotOrderingOffset();
-            }
-            else{
-                System.out.println("No snapshot is there in snapshot topics.");
-            }
-
-            snapshotConsumer.unsubscribe();
-            snapshotConsumer.close();
-
-        }
-        catch (Exception e){
-            System.out.println(e.getMessage());
-        }
     }
 
     public void tryToPublishSnapshot() {
-        String replicaToTakeTheSnapshot = null;
+        String replicaToTakeTheSnapshot = "";
 
         //determining which replica will take the snapshot
         try{
-            var records = this.SnapshotOrderingConsumer.poll(Duration.ofMillis(1));
-            if(records.count() == 0){
-                System.out.println("No replica is there in snapshot ordering topic.");
-            }
+            ConsumerRecords<String, byte[]> records = this.SnapshotOrderingConsumer.poll(Duration.ofMillis(1));
             if(records.count() > 1){
                 System.out.println("I have consumed more than one record in snapshot ordering topic. " +
                         "An error may be cause because of this in the future.");
             }
-            for(var record: records){
-                System.out.println(record);
+            for(ConsumerRecord<String, byte[]> record: records){
+                this.snapshotOffset = record.offset();
+                replicaToTakeTheSnapshot = SnapshotOrdering.parseFrom(record.value()).getReplicaId();
             }
+            //I will take the snapshot
+            if(replicaToTakeTheSnapshot != "" && replicaToTakeTheSnapshot == this.replicaName){
+                var properties = new Properties();
+                properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
+                try {
+                    StringSerializer serializer = new StringSerializer();
+                    serializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+                    ByteArraySerializer arraySerializer = new ByteArraySerializer();
+                    arraySerializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+                    var producer = new KafkaProducer<>(properties, serializer, arraySerializer);
+                    var bytes = Snapshot.newBuilder().setReplicaId(this.replicaName)
+                            .putAllTable(this.state)
+                            .putAllClientCounters(this.clientCounter)
+                            .setSnapshotOrderingOffset(this.snapshotOffset).
+                            setOperationsOffset(this.operationsOffset).build().toByteArray();
+                    var record = new ProducerRecord<String, byte[]>(this.topicPrefix + "snapshot", bytes);
+                    producer.send(record);
+                    //publish again in snapshot ordering topic.
+                    this.publishInSnapshotOrdering();
+                }
+                catch (Exception e){
+                    System.out.println(e.getMessage());
+                }
+            }
+
+
 
         }
         catch(Exception e){
@@ -245,7 +280,8 @@ public class Replica {
                         }
 
                     }
-                    if((this.snapshotOffset)%(this.messagesToTakeTheSnapshot) == 0){
+                    if((this.operationsOffset)%(this.messagesToTakeTheSnapshot) == 0){
+                        System.out.println("time to take the snapshot");
                         this.tryToPublishSnapshot();
                     }
                 }
