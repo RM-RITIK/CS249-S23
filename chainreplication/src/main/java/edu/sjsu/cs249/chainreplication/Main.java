@@ -5,6 +5,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Parameters;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Main {
     @Command(description = "first version of chain replication")
@@ -24,12 +25,13 @@ public class Main {
 
         @Override
         public Integer call() throws Exception {
-            ChainNode node = new ChainNode(name, grpcHostPort, zkHostPorts, controlPath);
+            ReentrantLock lock = new ReentrantLock();
+            ChainNode node = new ChainNode(name, grpcHostPort, zkHostPorts, controlPath, lock);
             node.createChainNode();
             node.findPredecessor();
             node.findSuccessor();
 
-            ServerCLI server = new ServerCLI(name, grpcHostPort, zkHostPorts, controlPath, node);
+            ServerCLI server = new ServerCLI(name, grpcHostPort, zkHostPorts, controlPath, node, lock);
             server.start();
 
             server.join();

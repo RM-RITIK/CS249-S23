@@ -3,19 +3,24 @@ package edu.sjsu.cs249.chainreplication;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 
+import java.util.concurrent.locks.ReentrantLock;
+
+
 public class ServerCLI extends Thread {
     public String name;
     public String grpcHostPort;
     public String zkHostPorts;
     public String controlPath;
     public ChainNode node;
+    public ReentrantLock lock;
 
-    ServerCLI(String name, String grpcHostPort, String zkHostPorts, String controlPath, ChainNode node){
+    ServerCLI(String name, String grpcHostPort, String zkHostPorts, String controlPath, ChainNode node, ReentrantLock lock){
         this.name = name;
         this.grpcHostPort = grpcHostPort;
         this.zkHostPorts = zkHostPorts;
         this.controlPath = controlPath;
         this.node = node;
+        this.lock = lock;
     }
 
     @Override
@@ -27,13 +32,23 @@ public class ServerCLI extends Thread {
         try{
             Server server = ServerBuilder
                     .forPort(serverPort)
-                    .addService(new HeadChainReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node))
-                    .addService(new TailChainReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node))
-                    .addService(new ReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node))
-                    .addService(new ChainDebugImpl(this.node))
+                    .addService(new HeadChainReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node, this.lock))
+                    .addService(new TailChainReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node, this.lock))
+                    .addService(new ReplicaImpl(this.name, this.grpcHostPort, this.zkHostPorts, this.controlPath, this.node, this.lock))
+                    .addService(new ChainDebugImpl(this.node, this.lock))
                     .build();
 
             server.start();
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    this.node.zk.close();
+                } catch (InterruptedException e) {
+                    System.out.println("Error in closing zookeeper instance");
+                    e.printStackTrace();
+                }
+                server.shutdown();
+                System.out.println("Successfully stopped the server");
+            }));
             server.awaitTermination();
 
         }
