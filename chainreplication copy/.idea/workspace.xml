@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="86110f17-f1b2-4781-9b83-d21ce885320f" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/chain.zip" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ChainDebugImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ChainDebugImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ChainNode.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ChainNode.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/HeadChainReplicaImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/HeadChainReplicaImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ReplicaImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ReplicaImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ServerCLI.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/ServerCLI.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/TailChainReplicaImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/edu/sjsu/cs249/chainreplication/TailChainReplicaImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/chainreplication-1.0-spring-boot.jar" beforeDir="false" afterPath="$PROJECT_DIR$/target/chainreplication-1.0-spring-boot.jar" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/chainreplication-1.0.jar" beforeDir="false" afterPath="$PROJECT_DIR$/target/chainreplication-1.0.jar" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ChainDebugImpl.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ChainDebugImpl.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ChainNode$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ChainNode$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ChainNode.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ChainNode.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/HeadChainReplicaImpl.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/HeadChainReplicaImpl.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAcknowledgementRequest$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAcknowledgementRequest$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAcknowledgementRequest.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAcknowledgementRequest.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAllPendingAckRequests$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAllPendingAckRequests$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAllPendingAckRequests.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendAllPendingAckRequests.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendUpdateRequestToSuccessor$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendUpdateRequestToSuccessor$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendUpdateRequestToSuccessor.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl$sendUpdateRequestToSuccessor.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ReplicaImpl.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ServerCLI.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/ServerCLI.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/TailChainReplicaImpl.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/edu/sjsu/cs249/chainreplication/TailChainReplicaImpl.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/ChainDebugGrpc.java" beforeDir="false" afterPath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/ChainDebugGrpc.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/HeadChainReplicaGrpc.java" beforeDir="false" afterPath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/HeadChainReplicaGrpc.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/ReplicaGrpc.java" beforeDir="false" afterPath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/ReplicaGrpc.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/TailChainReplicaGrpc.java" beforeDir="false" afterPath="$PROJECT_DIR$/target/generated-sources/protobuf/grpc-java/edu/sjsu/cs249/chain/TailChainReplicaGrpc.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" beforeDir="false" afterPath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Class" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
+  <component name="MavenImportPreferences">
+    <option name="importingSettings">
+      <MavenImportingSettings>
+        <option name="workspaceImportEnabled" value="true" />
+      </MavenImportingSettings>
+    </option>
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="ProjectErrors" />
+  </component>
+  <component name="ProjectId" id="2O2Ue2LZk8bOKbv2KBxWNHQ7fYy" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/rmritik/Documents/Distributed Computing/CS249-S23/chainreplication&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CreateClassDialog.RecentsKey">
+      <recent name="edu.sjsu.cs249.chainreplication" />
+    </key>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="86110f17-f1b2-4781-9b83-d21ce885320f" name="Changes" comment="" />
+      <created>1680758262390</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1680758262390</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
+  </component>
+</project>
