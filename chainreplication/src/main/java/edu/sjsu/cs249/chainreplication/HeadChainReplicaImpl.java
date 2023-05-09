@@ -6,10 +6,7 @@ import io.grpc.ManagedChannelBuilder;
 import org.apache.zookeeper.data.Stat;
 
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaImplBase {
     public String name;
@@ -17,26 +14,21 @@ public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaI
     public String zkHostPorts;
     public String controlPath;
     public ChainNode node;
-    public ReentrantLock lock;
 
-    HeadChainReplicaImpl(String name, String grpcHostPort, String zkHostPorts, String controlPath, ChainNode node, ReentrantLock lock){
+    HeadChainReplicaImpl(String name, String grpcHostPort, String zkHostPorts, String controlPath, ChainNode node){
         this.name = name;
         this.grpcHostPort = grpcHostPort;
         this.zkHostPorts = zkHostPorts;
         this.controlPath = controlPath;
         this.node = node;
-        this.lock = lock;
-
     }
 
     @Override
     public void increment(IncRequest request, StreamObserver<HeadResponse> responseObserver) {
-        this.lock.lock();
         System.out.println("I got the increment request.");
         String key = request.getKey();
         int value = request.getIncValue();
         if(this.node.amIHead == Boolean.FALSE){
-            this.lock.unlock();
             HeadResponse response = HeadResponse.newBuilder().setRc(1).build();
             responseObserver.onNext(response);
             responseObserver.onCompleted();
@@ -54,7 +46,6 @@ public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaI
             if(node.amITail == Boolean.TRUE){
                 //I am the tail as well.
                 this.node.updateLastXidAck(XId);
-                this.lock.unlock();
                 HeadResponse response = HeadResponse.newBuilder().setRc(0).build();
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
@@ -76,14 +67,13 @@ public class HeadChainReplicaImpl extends HeadChainReplicaGrpc.HeadChainReplicaI
                     UpdateRequest updateRequest = UpdateRequest.newBuilder().setKey(key).setNewValue(this.node.nodeState.get(key)).setXid(XId).build();
                     this.node.sentMessages.add(updateRequest);
                     this.node.incReqToClient.put(updateRequest, responseObserver);
-                    UpdateResponse updateResponse = stub.update(updateRequest);
-                    this.lock.unlock();
+                    UpdateResponse response = stub.update(updateRequest);
                 }
                 catch (Exception e){
-                    this.lock.unlock();
                     System.out.println(e.getMessage());
                 }
             }
+
         }
 
     }
