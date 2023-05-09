@@ -11,16 +11,20 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Properties;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class KafkaTableImpl extends KafkaTableGrpc.KafkaTableImplBase {
     public Replica replica;
+    public ReentrantLock lock;
 
-    KafkaTableImpl(Replica replica){
+    KafkaTableImpl(Replica replica, ReentrantLock lock){
         this.replica = replica;
+        this.lock = lock;
     }
 
     @Override
     public void inc(IncRequest request, StreamObserver<IncResponse> responseObserver) {
+        this.lock.lock();
         System.out.println("I received the inc request.");
         String key = request.getKey();
         int value = request.getIncValue();
@@ -30,6 +34,7 @@ public class KafkaTableImpl extends KafkaTableGrpc.KafkaTableImplBase {
         //If I have already seen this request
         if(this.replica.clientCounter.containsKey(clientId) && (this.replica.clientCounter.get(clientId) >= counter)){
             //Sending the response back to the client
+            this.lock.unlock();
             IncResponse response = IncResponse.newBuilder().build();
             responseObserver.onNext(response);
             responseObserver.onCompleted();
@@ -64,6 +69,7 @@ public class KafkaTableImpl extends KafkaTableGrpc.KafkaTableImplBase {
             else{
                 System.out.println("Not able to update the key as the resulting value would be less than zero.");
             }
+            this.lock.unlock();
         }
 
 
@@ -71,12 +77,14 @@ public class KafkaTableImpl extends KafkaTableGrpc.KafkaTableImplBase {
 
     @Override
     public void get(GetRequest request, StreamObserver<GetResponse> responseObserver) {
+        this.lock.lock();
         String key = request.getKey();
         String clientId = request.getXid().getClientid();
         int counter = request.getXid().getCounter();
 
         //If I have already seen this request
         if(this.replica.clientCounter.containsKey(clientId) && this.replica.clientCounter.get(clientId) > counter) {
+            this.lock.unlock();
             GetResponse response = GetResponse.newBuilder().setValue(this.replica.state.get(key)).build();
             responseObserver.onNext(response);
             responseObserver.onCompleted();
@@ -103,6 +111,7 @@ public class KafkaTableImpl extends KafkaTableGrpc.KafkaTableImplBase {
             catch (Exception e){
                 System.out.println(e.getMessage());
             }
+            this.lock.unlock();
         }
     }
 }

@@ -25,6 +25,7 @@ public class Replica {
     public String replicaName;
     public Integer messagesToTakeTheSnapshot;
     public String topicPrefix;
+    public Integer noOfOperationMessages;
     public String groupId;
     public Map<String, Integer> state;
     public Long operationsOffset;
@@ -46,6 +47,7 @@ public class Replica {
         this.operationsOffset = -1L;
         this.clientCounter = new HashMap<String, Integer>();
         this.snapshotOffset = -1L;
+        this.noOfOperationMessages = 0;
         this.pendingIncRequests = new HashMap<IncRequest, StreamObserver<IncResponse>>();
         this.pendingGetRequest = new HashMap<GetRequest, StreamObserver<GetResponse>>();
         this.lock = lock;
@@ -64,8 +66,10 @@ public class Replica {
     }
 
     public void consumeAlreadyExistingSnapshot() {
+        System.out.println("consume if a snapshot is there in the snapshot topic");
         //consume if a snapshot is there in the snapshot topic
         try{
+            this.lock.lock();
             var properties = new Properties();
             properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
             properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -101,6 +105,7 @@ public class Replica {
 
             snapshotConsumer.unsubscribe();
             snapshotConsumer.close();
+            this.lock.unlock();
 
         }
         catch (Exception e){
@@ -163,6 +168,7 @@ public class Replica {
     }
 
     public void tryToPublishSnapshot() {
+        this.lock.lock();
         String replicaToTakeTheSnapshot = "";
 
         //determining which replica will take the snapshot
@@ -207,6 +213,7 @@ public class Replica {
         catch(Exception e){
             System.out.println(e.getMessage());
         }
+        this.lock.unlock();
     }
 
     public void subscribeToOperationsTopic() {
@@ -226,6 +233,7 @@ public class Replica {
             while(true){
                 var records = consumer.poll(Duration.ofSeconds(1));
                 for (var record: records) {
+                    this.noOfOperationMessages = this.noOfOperationMessages + 1;
                     //Updating the offset.
                     if(record.offset() > this.operationsOffset){
                         this.operationsOffset = record.offset();
@@ -280,7 +288,7 @@ public class Replica {
                         }
 
                     }
-                    if((this.operationsOffset)%(this.messagesToTakeTheSnapshot) == 0){
+                    if((this.noOfOperationMessages)%(this.messagesToTakeTheSnapshot) == 0){
                         System.out.println("time to take the snapshot");
                         this.tryToPublishSnapshot();
                     }

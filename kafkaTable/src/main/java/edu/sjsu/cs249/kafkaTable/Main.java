@@ -64,7 +64,7 @@ public class Main {
             replica.consumeAlreadyExistingSnapshot();
             replica.publishInSnapshotOrdering();
 
-            ServerCLI server = new ServerCLI(kafkaServer, replicaName, grpcPort, messagesToTakeTheSnapshot, topicPrefix, replica);
+            ServerCLI server = new ServerCLI(kafkaServer, replicaName, grpcPort, messagesToTakeTheSnapshot, topicPrefix, replica, lock);
             server.start();
             replica.subscribeToOperationsTopic();
 

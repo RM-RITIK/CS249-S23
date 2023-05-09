@@ -13,24 +13,26 @@ public class ServerCLI extends Thread{
     public Integer messagesToTakeTheSnapshot;
     public String topicPrefix;
     public Replica replica;
+    public ReentrantLock lock;
 
 
     ServerCLI(String kafkaServer, String replicaName, Integer grpcPort, Integer messagesToTakeTheSnapshot,
-              String topicPrefix, Replica replica) {
+              String topicPrefix, Replica replica, ReentrantLock lock) {
         this.kafkaServer = kafkaServer;
         this.replicaName = replicaName;
         this.grpcPort = grpcPort;
         this.messagesToTakeTheSnapshot = messagesToTakeTheSnapshot;
         this.topicPrefix = topicPrefix;
         this.replica = replica;
+        this.lock = lock;
     }
 
     @Override
     public void run(){
         try{
             Server server = ServerBuilder.forPort(this.grpcPort)
-                    .addService(new KafkaTableImpl(this.replica))
-                    .addService(new KafkaTableDebugImpl(this.replica))
+                    .addService(new KafkaTableImpl(this.replica, this.lock))
+                    .addService(new KafkaTableDebugImpl(this.replica, this.lock))
                     .build();
             System.out.println("Started the server at port: " + this.grpcPort);
             server.start();
