@@ -315,6 +315,7 @@ public class Replica {
                         //I have not produced the original request. So, I need to check if I need to
                         //update my values.
                         else{
+                            this.lock.lock();
                             //I need to update the value
                             if(this.clientCounter.containsKey(request.getInc().getXid().getClientid()) == Boolean.FALSE ||
                                     (request.getInc().getXid().getCounter() > this.clientCounter.get(request.getInc().getXid().getClientid()))){
@@ -327,6 +328,7 @@ public class Replica {
                                     System.out.println("The table cannot be updated as the value would become less than 0");
                                 }
                             }
+                            this.lock.unlock();
                         }
                     }
                     //If it is a get request
@@ -344,10 +346,12 @@ public class Replica {
                         }
                         //I did not send the original get request
                         else{
+                            this.lock.lock();
                             if(this.clientCounter.containsKey(request.getGet().getXid().getClientid()) == Boolean.FALSE ||
                                     (request.getGet().getXid().getCounter() > this.clientCounter.get(request.getGet().getXid().getClientid()))){
                                 this.clientCounter.put(request.getGet().getXid().getClientid(), request.getGet().getXid().getCounter());
                             }
+                            this.lock.unlock();
                         }
 
                     }
