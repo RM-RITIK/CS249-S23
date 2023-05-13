@@ -32,6 +32,7 @@ edu/sjsu/cs249/kafkaTable/KafkaTableDebugGrpc$KafkaTableDebugFileDescriptorSuppl
 edu/sjsu/cs249/kafkaTable/PublishedItem$Builder.class
 edu/sjsu/cs249/kafkaTable/GetRequest$1.class
 edu/sjsu/cs249/kafkaTable/PublishedItem$2.class
+edu/sjsu/cs249/kafkaTable/Replica$2.class
 edu/sjsu/cs249/kafkaTable/KafkaTableDebugGrpc$AsyncService.class
 edu/sjsu/cs249/kafkaTable/KafkaTableDebugResponse.class
 edu/sjsu/cs249/kafkaTable/ExitResponseOrBuilder.class
@@ -58,6 +59,7 @@ edu/sjsu/cs249/kafkaTable/IncResponse.class
 edu/sjsu/cs249/kafkaTable/GetResponse$1.class
 edu/sjsu/cs249/kafkaTable/IncResponse$Builder.class
 edu/sjsu/cs249/kafkaTable/KafkaTableGrpc$1.class
+edu/sjsu/cs249/kafkaTable/Replica$1.class
 edu/sjsu/cs249/kafkaTable/GetRequest.class
 edu/sjsu/cs249/kafkaTable/KafkaTableDebugRequest.class
 edu/sjsu/cs249/kafkaTable/KafkaTableDebugImpl.class
@@ -70,6 +72,7 @@ edu/sjsu/cs249/kafkaTable/Snapshot.class
 edu/sjsu/cs249/kafkaTable/SimpleMessageOrBuilder.class
 edu/sjsu/cs249/kafkaTable/KafkaTableGrpc$KafkaTableStub.class
 edu/sjsu/cs249/kafkaTable/GetRequest$Builder.class
+edu/sjsu/cs249/kafkaTable/Replica$3.class
 edu/sjsu/cs249/kafkaTable/KafkaTableGrpc$KafkaTableMethodDescriptorSupplier.class
 edu/sjsu/cs249/kafkaTable/Snapshot$ClientCountersDefaultEntryHolder.class
 edu/sjsu/cs249/kafkaTable/SnapshotOrdering.class

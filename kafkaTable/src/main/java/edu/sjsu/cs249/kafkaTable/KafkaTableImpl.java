@@ -69,6 +69,7 @@ public class KafkaTableImpl extends KafkaTableGrpc.KafkaTableImplBase {
             else{
                 System.out.println("Not able to update the key as the resulting value would be less than zero.");
             }
+            System.out.println("I have published the inc request to kafka");
             this.lock.unlock();
         }
 

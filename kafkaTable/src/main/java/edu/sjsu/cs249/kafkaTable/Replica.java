@@ -2,22 +2,22 @@ package edu.sjsu.cs249.kafkaTable;
 
 import io.grpc.stub.StreamObserver;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.checkerframework.checker.units.qual.C;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Replica {
@@ -33,8 +33,8 @@ public class Replica {
     public Long snapshotOffset;
     public Map<IncRequest, StreamObserver<IncResponse>> pendingIncRequests;
     public Map<GetRequest, StreamObserver<GetResponse>> pendingGetRequest;
-    public KafkaConsumer SnapshotOrderingConsumer;
     public ReentrantLock lock;
+    public Integer groupIdCounter;
 
 
     Replica(String kafkaServer, String replicaName, Integer messagesToTakeTheSnapshot, String topicPrefix, ReentrantLock lock){
@@ -51,37 +51,44 @@ public class Replica {
         this.pendingIncRequests = new HashMap<IncRequest, StreamObserver<IncResponse>>();
         this.pendingGetRequest = new HashMap<GetRequest, StreamObserver<GetResponse>>();
         this.lock = lock;
-
-        var properties = new Properties();
-        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
-        properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId);
-        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1");
-        StringDeserializer deserializer = new StringDeserializer();
-        deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
-        ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
-        arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
-        this.SnapshotOrderingConsumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
-        this.SnapshotOrderingConsumer.subscribe(List.of(this.topicPrefix + "snapshotOrdering"));
+        this.groupIdCounter = 0;
     }
 
     public void consumeAlreadyExistingSnapshot() {
         System.out.println("consume if a snapshot is there in the snapshot topic");
+        this.lock.lock();
         //consume if a snapshot is there in the snapshot topic
         try{
-            this.lock.lock();
             var properties = new Properties();
             properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
             properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId);
+            properties.setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
 
             StringDeserializer deserializer = new StringDeserializer();
             deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
             ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
             arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
             var snapshotConsumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
-            snapshotConsumer.subscribe(List.of(this.topicPrefix + "snapshot"));
-            var snapshotRecords = snapshotConsumer.poll(Duration.ofMillis(1));
+            var sem = new Semaphore(0);
+            snapshotConsumer.subscribe(List.of(this.topicPrefix + "snapshot"), new ConsumerRebalanceListener() {
+                @Override
+                public void onPartitionsRevoked(Collection<TopicPartition> collection) {
+                    System.out.println("A consumer has been unsubscribed");
+                }
+
+                @Override
+                public void onPartitionsAssigned(Collection<TopicPartition> collection) {
+                    System.out.println("Partition assigned");
+                    collection.stream().forEach(t -> snapshotConsumer.seek(t, 0));
+                    sem.release();
+                }
+            });
+            snapshotConsumer.poll(0);
+            sem.acquire();
+            System.out.println("Ready to consume snapshot topic at " + new Date());
+            var snapshotRecords = snapshotConsumer.poll(Duration.ofSeconds(5));
+            System.out.println("No of records in snapshot topic " + snapshotRecords.count());
             var maxRecord = new ConsumerRecord<String, byte[]>("snapshot", 0, 0, null, null);
             long maxOffset = -1;
             for(var record: snapshotRecords){
@@ -90,12 +97,12 @@ public class Replica {
                     maxRecord = record;
                 }
             }
-
             if(maxOffset != -1){
                 Snapshot latestSnapshot = Snapshot.parseFrom(maxRecord.value());
-                this.state = latestSnapshot.getTable();
+                System.out.println(latestSnapshot);
+                this.state = new HashMap<>(latestSnapshot.getTable());
                 this.operationsOffset = latestSnapshot.getOperationsOffset();
-                this.clientCounter = latestSnapshot.getClientCounters();
+                this.clientCounter = new HashMap<>(latestSnapshot.getClientCounters());
                 //Update the snapshot offset
                 this.snapshotOffset = latestSnapshot.getSnapshotOrderingOffset();
             }
@@ -110,14 +117,18 @@ public class Replica {
         }
         catch (Exception e){
             System.out.println(e.getMessage());
+            this.lock.unlock();
         }
     }
 
     public void publishInSnapshotOrdering() {
+        System.out.println("publish in snapshot ordering");
         var properties = new Properties();
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId);
+        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId + Integer.toString(this.groupIdCounter));
+        properties.setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
+        this.groupIdCounter = this.groupIdCounter + 1;
 
         //check if I am already there in the snapshot ordering topic
         Boolean alreadyPublished = Boolean.FALSE;
@@ -127,11 +138,30 @@ public class Replica {
             ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
             arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
             var consumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
-            consumer.subscribe(List.of(this.topicPrefix + "snapshotOrdering"));
-            var records = consumer.poll(Duration.ofMillis(1));
+            var sem = new Semaphore(0);
+            consumer.subscribe(List.of(this.topicPrefix + "snapshotOrdering"), new ConsumerRebalanceListener() {
+                @Override
+                public void onPartitionsRevoked(Collection<TopicPartition> collection) {
+                    System.out.println("A consumer has been unsubscribed");
+                }
+
+                @Override
+                public void onPartitionsAssigned(Collection<TopicPartition> collection) {
+                    System.out.println("Partition assigned");
+                    collection.stream().forEach(t -> consumer.seek(t, snapshotOffset.intValue() + 1));
+                    sem.release();
+                }
+            });
+            consumer.poll(0);
+            sem.acquire();
+            System.out.println("Ready to consume snapshot ordering topic at " + new Date());
+            var records = consumer.poll(Duration.ofSeconds(5));
+            System.out.println("No of records in snapshot ordering topic " + records.count());
+            System.out.println(this.snapshotOffset);
             for(var record: records){
+                System.out.println(record.offset());
                 var message = SnapshotOrdering.parseFrom(record.value());
-                if(message.getReplicaId() == this.replicaName){
+                if(message.getReplicaId().equals(this.replicaName)){
                     alreadyPublished = Boolean.TRUE;
                 }
             }
@@ -152,8 +182,8 @@ public class Replica {
 
             try{
                 var bytes = SnapshotOrdering.newBuilder()
-                            .setReplicaId(this.replicaName)
-                            .build().toByteArray();
+                        .setReplicaId(this.replicaName)
+                        .build().toByteArray();
                 var record = new ProducerRecord<String, byte[]>(this.topicPrefix + "snapshotOrdering", bytes);
                 producer.send(record);
             }
@@ -169,23 +199,55 @@ public class Replica {
 
     public void tryToPublishSnapshot() {
         this.lock.lock();
+        var properties = new Properties();
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
+        properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId + Integer.toString(this.groupIdCounter));
+        properties.setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1");
+        this.groupIdCounter = this.groupIdCounter + 1;
+
         String replicaToTakeTheSnapshot = "";
+        System.out.println("The person in the front at the snapshot ordering queue will now take the snapshot.");
 
         //determining which replica will take the snapshot
         try{
-            ConsumerRecords<String, byte[]> records = this.SnapshotOrderingConsumer.poll(Duration.ofMillis(1));
+            StringDeserializer deserializer = new StringDeserializer();
+            deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+            ByteArrayDeserializer arrayDeserializer = new ByteArrayDeserializer();
+            arrayDeserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
+            var consumer = new KafkaConsumer<>(properties, deserializer, arrayDeserializer);
+            var sem = new Semaphore(0);
+            consumer.subscribe(List.of(this.topicPrefix + "snapshotOrdering"), new ConsumerRebalanceListener() {
+                @Override
+                public void onPartitionsRevoked(Collection<TopicPartition> collection) {
+                    System.out.println("A consumer has been unsubscribed");
+                }
+
+                @Override
+                public void onPartitionsAssigned(Collection<TopicPartition> collection) {
+                    System.out.println("Partition assigned");
+                    collection.stream().forEach(t -> consumer.seek(t, snapshotOffset.intValue() + 1));
+                    sem.release();
+                }
+            });
+            consumer.poll(0);
+            sem.acquire();
+            System.out.println("Ready to consume snapshot ordering topic at " + new Date());
+            var records = consumer.poll(Duration.ofSeconds(5));
+            System.out.println("No of records in snapshot ordering topic " + records.count());
             if(records.count() > 1){
                 System.out.println("I have consumed more than one record in snapshot ordering topic. " +
                         "An error may be cause because of this in the future.");
             }
-            for(ConsumerRecord<String, byte[]> record: records){
+            for(var record: records){
                 this.snapshotOffset = record.offset();
                 replicaToTakeTheSnapshot = SnapshotOrdering.parseFrom(record.value()).getReplicaId();
             }
+            System.out.println("It's " + replicaToTakeTheSnapshot + "'s turn to take the snapshot.");
             //I will take the snapshot
-            if(replicaToTakeTheSnapshot != "" && replicaToTakeTheSnapshot == this.replicaName){
-                var properties = new Properties();
-                properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
+            if(replicaToTakeTheSnapshot != "" && replicaToTakeTheSnapshot.equals(this.replicaName)){
+                System.out.println("I will take the snapshot");
                 try {
                     StringSerializer serializer = new StringSerializer();
                     serializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
@@ -223,6 +285,7 @@ public class Replica {
             properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, this.kafkaServer);
             properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
             properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, this.groupId);
+            properties.setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
 
             StringDeserializer deserializer = new StringDeserializer();
             deserializer.configure(Collections.singletonMap("charset", "UTF-8"), false);
@@ -233,10 +296,10 @@ public class Replica {
             while(true){
                 var records = consumer.poll(Duration.ofSeconds(1));
                 for (var record: records) {
-                    this.noOfOperationMessages = this.noOfOperationMessages + 1;
                     //Updating the offset.
                     if(record.offset() > this.operationsOffset){
                         this.operationsOffset = record.offset();
+                        this.noOfOperationMessages = this.noOfOperationMessages + 1;
                     }
                     PublishedItem request = PublishedItem.parseFrom(record.value());
                     //If it is a increment request
@@ -288,7 +351,7 @@ public class Replica {
                         }
 
                     }
-                    if((this.noOfOperationMessages)%(this.messagesToTakeTheSnapshot) == 0){
+                    if(this.noOfOperationMessages != 0 && (this.noOfOperationMessages)%(this.messagesToTakeTheSnapshot) == 0){
                         System.out.println("time to take the snapshot");
                         this.tryToPublishSnapshot();
                     }
@@ -314,6 +377,7 @@ public class Replica {
             return Boolean.FALSE;
         }
     }
+
 
 
 }
